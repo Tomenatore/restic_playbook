@@ -114,29 +114,21 @@ restic_force_rescan_day: 0
 # ========================================
 
 # Backup timer settings
-restic_timer_on_calendar: "daily"  # or use cron-like syntax: "Mon,Wed,Fri *-*-* 02:00:00"
-restic_timer_on_boot_sec: "15min"
-restic_timer_interval: "24h"
+restic_timer_on_calendar: "daily"  # Examples: "daily", "weekly", "Mon,Wed,Fri *-*-* 02:00:00", "hourly"
 restic_timer_persistent: true
 restic_timer_randomized_delay: "30min"
 restic_timer_accuracy: "1h"
 
 # Prune timer settings
 restic_prune_timer_on_calendar: "weekly"
-restic_prune_timer_on_boot_sec: "30min"
-restic_prune_timer_interval: "7d"
 
 # Check timer settings
 restic_check_timer_on_calendar: "weekly"
-restic_check_timer_on_boot_sec: "1h"
-restic_check_timer_interval: "7d"
 restic_check_read_data: false  # Set to true for full data integrity check (slower)
 restic_check_read_data_subset: ""  # Example: "1/12" (check 1/12 of data), "10%" (10% random), "50M" (50 MiB)
 
 # Scan timer settings
 restic_scan_timer_on_calendar: "daily"
-restic_scan_timer_on_boot_sec: "1h"
-restic_scan_timer_interval: "1d"
 
 # ========================================
 # PERFORMANCE & LIMITS
