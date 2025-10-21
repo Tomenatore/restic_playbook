@@ -167,11 +167,23 @@ restic_retention_keep_yearly: 5
 # RESTIC LOCK MANAGEMENT
 # ========================================
 
-# NOTE: Restic uses native repository locks with a fixed 30-minute staleness threshold
-# The 'restic unlock' command automatically removes locks older than 30 minutes
-# This variable is kept for documentation purposes only
-# Restic's --retry-lock flag (configured above) handles temporary locks automatically
-restic_lock_max_age_hours: 12  # Informational only - Restic uses 30 minutes internally
+# Maximum age of locks before cleanup (stale lock detection)
+# If a lock is older than this threshold, it's considered stale (likely from a crash)
+# and will be removed via 'restic unlock' in ExecStartPre
+#
+# Note: Restic's 'restic unlock' command removes locks older than 30 minutes (hardcoded)
+# This variable controls WHEN we call 'restic unlock', not what it removes
+#
+# Locks younger than this threshold are handled by --retry-lock
+restic_lock_max_age_hours: 12  # Threshold for stale lock detection
+
+# Retry configuration for failed operations
+# Services will retry on failure (e.g., when repository is locked)
+# RestartSec: Wait time between retry attempts
+restic_restart_sec: "15min"  # Wait 15 minutes before retry
+
+# Maximum number of restart attempts (0 = infinite)
+restic_restart_max_attempts: 0  # Keep trying until lock is released
 
 # ========================================
 # DIRECTORIES

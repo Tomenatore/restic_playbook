@@ -74,8 +74,13 @@ PrivateTmp=yes
 ProtectSystem=strict
 ReadWritePaths={{ restic_config_dir }} {{ restic_scripts_dir }} {{ restic_hooks_dir }} {{ restic_checkmk_spool_dir }} {% for source in restic_backup_sources %}{{ source.path }} {% endfor %}
 
-# Restart behavior
-Restart=no
+# Restart behavior - retry on failure (e.g., locked repository)
+Restart=on-failure
+RestartSec={{ restic_restart_sec }}
+{% if restic_restart_max_attempts > 0 %}
+StartLimitBurst={{ restic_restart_max_attempts }}
+StartLimitIntervalSec=0
+{% endif %}
 
 [Install]
 WantedBy=multi-user.target
