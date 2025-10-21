@@ -43,35 +43,36 @@
 - name: Flush handlers to reload systemd
   ansible.builtin.meta: flush_handlers
 
-- name: Enable and start backup timers
-  ansible.builtin.systemd:
-    name: "restic-backup@{{ item.name }}.timer"
-    enabled: yes
-    state: started
-    daemon_reload: yes
-  loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
-  loop_control:
-    label: "{{ item.name }}"
-  when:
-    - restic_enable_backup | bool
-    - restic_enable_timers | bool
+- name: Build list of timers to enable
+  ansible.builtin.set_fact:
+    restic_timers_to_enable: >-
+      {{
+        (restic_backup_sources | selectattr('enabled') | list |
+         map(attribute='name') |
+         map('regex_replace', '^(.*)$', 'restic-backup@\1.timer') | list
+         if restic_enable_backup else [])
+        +
+        (['restic-prune@' + (restic_backup_sources | selectattr('enabled') | list | first).name + '.timer']
+         if restic_enable_prune and (restic_backup_sources | selectattr('enabled') | list | length) > 0 else [])
+        +
+        (['restic-check@' + (restic_backup_sources | selectattr('enabled') | list | first).name + '.timer']
+         if restic_enable_check and (restic_backup_sources | selectattr('enabled') | list | length) > 0 else [])
+        +
+        (['restic-scan@' + (restic_backup_sources | selectattr('enabled') | list | first).name + '.timer']
+         if restic_enable_scan and (restic_backup_sources | selectattr('enabled') | list | length) > 0 else [])
+      }}
+  when: restic_enable_timers | bool
 
-- name: Enable and start maintenance timers (prune, check, scan)
+- name: Enable and start all timers
   ansible.builtin.systemd:
-    name: "restic-{{ item.unit }}@{{ (restic_backup_sources | selectattr('enabled') | list | first).name }}.timer"
+    name: "{{ item }}"
     enabled: yes
     state: started
     daemon_reload: yes
-  loop:
-    - { unit: "prune", enabled: "{{ restic_enable_prune }}" }
-    - { unit: "check", enabled: "{{ restic_enable_check }}" }
-    - { unit: "scan", enabled: "{{ restic_enable_scan }}" }
+  loop: "{{ restic_timers_to_enable | default([]) }}"
   loop_control:
-    label: "{{ item.unit }}"
-  when:
-    - item.enabled | bool
-    - restic_enable_timers | bool
-    - (restic_backup_sources | selectattr('enabled') | list | length) > 0
+    label: "{{ item }}"
+  when: restic_enable_timers | bool
 
 # ========================================
 # SUMMARY
