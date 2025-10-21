@@ -6,7 +6,7 @@
   ansible.builtin.set_fact:
     restic_env:
       RESTIC_REPOSITORY: "{{ restic_repository }}"
-      RESTIC_PASSWORD_FILE: "{{ restic_config_dir }}/passwords/{% if restic_use_playbook_key %}{{ restic_playbook_password_file }}{% else %}{{ restic_generic_password_file }}{% endif %}"
+      RESTIC_PASSWORD_FILE: "{{ restic_config_dir }}/passwords/{{ restic_active_password_file }}"
       {% if restic_backend_type == "s3" %}
       AWS_ACCESS_KEY_ID: "{{ restic_s3_access_key }}"
       AWS_SECRET_ACCESS_KEY: "{{ restic_s3_secret_key }}"

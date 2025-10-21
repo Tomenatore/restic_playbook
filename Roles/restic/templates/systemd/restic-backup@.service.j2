@@ -11,19 +11,15 @@ Group=root
 
 # Environment
 Environment="RESTIC_REPOSITORY={{ restic_repository }}"
-Environment="RESTIC_PASSWORD_FILE={{ restic_config_dir }}/passwords/{% if restic_use_playbook_key %}{{ restic_playbook_password_file }}{% else %}{{ restic_generic_password_file }}{% endif %}"
+Environment="RESTIC_PASSWORD_FILE={{ restic_config_dir }}/passwords/{{ restic_active_password_file }}"
 {% if restic_backend_type == "s3" %}
 Environment="AWS_ACCESS_KEY_ID={{ restic_s3_access_key }}"
 Environment="AWS_SECRET_ACCESS_KEY={{ restic_s3_secret_key }}"
 Environment="AWS_DEFAULT_REGION={{ restic_s3_region }}"
 {% endif %}
 Environment="RESTIC_READ_CONCURRENCY={{ restic_read_concurrency }}"
-{% if restic_upload_limit_kbps > 0 %}
 Environment="RESTIC_LIMIT_UPLOAD={{ restic_upload_limit_kbps }}"
-{% endif %}
-{% if restic_download_limit_kbps > 0 %}
 Environment="RESTIC_LIMIT_DOWNLOAD={{ restic_download_limit_kbps }}"
-{% endif %}
 
 # Restic Hooks (native hook system)
 # Restic automatically calls these scripts before/after backup
