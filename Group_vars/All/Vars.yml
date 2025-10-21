@@ -1,0 +1,146 @@
+---
+# group_vars/all/vars.yml
+# Example Configuration for Restic Backup Role
+
+# ========================================
+# BACKUP TARGET
+# ========================================
+
+backup_target_type: "s3"
+
+# ========================================
+# S3 CONFIGURATION
+# ========================================
+
+s3_bucket: "my-company-backups"
+s3_region: "eu-central-1"
+s3_endpoint: ""  # Empty for AWS, or "https://minio.example.com" for MinIO
+s3_prefix: "restic"
+
+# Credentials from vault
+s3_access_key: "{{ vault_aws_access_key }}"
+s3_secret_key: "{{ vault_aws_secret_key }}"
+
+# ========================================
+# LOCAL CONFIGURATION (Alternative)
+# ========================================
+
+# backup_target_type: "local"
+# local_backup_path: "/mnt/backup/restic"
+
+# ========================================
+# BACKUP SOURCES
+# ========================================
+
+backup_sources:
+  - path: "/var/www"
+    tags: ["web", "production"]
+    enabled: true
+  
+  - path: "/etc"
+    tags: ["config", "system"]
+    enabled: true
+  
+  - path: "/var/backups"
+    tags: ["dumps", "database"]
+    enabled: true
+  
+  - path: "/home"
+    tags: ["userdata"]
+    enabled: false
+
+# ========================================
+# EXCLUDES
+# ========================================
+
+backup_excludes:
+  - "*.tmp"
+  - "*.cache"
+  - "*.log"
+  - "*/cache/*"
+  - "*/tmp/*"
+  - "*/node_modules/*"
+  - "*/vendor/*"
+  - "*/.git/*"
+  - "*/lost+found/*"
+  - "*.pyc"
+  - "__pycache__"
+
+# ========================================
+# BACKUP SCHEDULE
+# ========================================
+
+backup_interval_hours: 24
+
+backup_time_window:
+  enabled: false
+  start_hour: 2
+  end_hour: 5
+
+backup_force_rescan: false
+backup_force_rescan_day: 0
+
+# ========================================
+# RETENTION POLICY
+# ========================================
+
+retention_policy:
+  keep_last: 7
+  keep_hourly: 24
+  keep_daily: 14
+  keep_weekly: 8
+  keep_monthly: 12
+  keep_yearly: 5
+
+# ========================================
+# SECURITY
+# ========================================
+
+restic_password: "{{ vault_restic_password }}"
+
+# ========================================
+# PRE/POST BACKUP TASKS
+# ========================================
+
+pre_backup_tasks_file: "{{ playbook_dir }}/tasks/pre_backup_tasks.yml"
+post_backup_tasks_file: "{{ playbook_dir }}/tasks/post_backup_tasks.yml"
+
+# ========================================
+# MONITORING
+# ========================================
+
+enable_checkmk: true
+checkmk_service_name: "Restic_Backup"
+checkmk_check_service_name: "Restic_Repository_Check"
+
+enable_syslog: true
+syslog_facility: "local0"
+syslog_tag: "restic-backup"
+
+# ========================================
+# REPOSITORY CHECKS
+# ========================================
+
+enable_repository_check: true
+check_interval_days: 7
+
+# ========================================
+# PERFORMANCE TUNING
+# ========================================
+
+restic_read_concurrency: 2
+restic_upload_limit_kbps: 0      # 0 = unlimited, 1024 = 1 MiB/s
+restic_download_limit_kbps: 0    # 0 = unlimited
+
+# ========================================
+# LOGGING
+# ========================================
+
+log_directory: "/var/log/restic"
+log_retention_days: 30
+
+# ========================================
+# DEBUG MODE
+# ========================================
+
+debug_mode: false  # WARNING: Only for testing!

@@ -1,0 +1,95 @@
+---
+# tasks/post_backup_tasks.yml
+# Post-Backup Tasks - Executed AFTER backup runs
+# Available variable: backup_successful (true/false)
+
+# ========================================
+# ALWAYS RUN (regardless of backup success)
+# ========================================
+
+- name: Cleanup MySQL dump
+  ansible.builtin.file:
+    path: /var/backups/mysql-dump.sql
+    state: absent
+  ignore_errors: yes
+
+- name: Cleanup PostgreSQL dump
+  ansible.builtin.file:
+    path: /var/backups/postgres-dump.sql
+    state: absent
+  ignore_errors: yes
+
+- name: Cleanup application logs archive
+  ansible.builtin.file:
+    path: /var/backups/app-logs.tar.gz
+    state: absent
+  ignore_errors: yes
+
+# ========================================
+# RUN ONLY ON SUCCESS
+# ========================================
+
+- name: Start nginx service (only on success)
+  ansible.builtin.service:
+    name: nginx
+    state: started
+  when: backup_successful | default(false)
+  ignore_errors: yes
+
+- name: Start Docker containers (only on success)
+  community.docker.docker_container:
+    name: "{{ item }}"
+    state: started
+  loop:
+    - webapp
+    - redis
+    - postgres
+  when: backup_successful | default(false)
+  ignore_errors: yes
+
+- name: Disable maintenance mode (only on success)
+  ansible.builtin.file:
+    path: /var/www/html/maintenance.flag
+    state: absent
+  when: backup_successful | default(false)
+  ignore_errors: yes
+
+- name: Update success timestamp (only on success)
+  ansible.builtin.copy:
+    content: "{{ ansible_date_time.iso8601 }}"
+    dest: /var/backups/.last_successful_backup
+    mode: '0644'
+  when: backup_successful | default(false)
+  ignore_errors: yes
+
+# ========================================
+# RUN ONLY ON FAILURE
+# ========================================
+
+- name: Log backup failure
+  ansible.builtin.lineinfile:
+    path: /var/log/backup_failures.log
+    line: "{{ ansible_date_time.iso8601 }} - Backup FAILED on {{ inventory_hostname }}"
+    create: yes
+    mode: '0644'
+  when: not backup_successful | default(true)
+  ignore_errors: yes
+
+- name: Keep dumps for debugging (only on failure)
+  ansible.builtin.debug:
+    msg: "Backup failed! Database dumps kept in /var/backups/ for debugging"
+  when: not backup_successful | default(true)
+
+# ========================================
+# NOTIFICATIONS
+# ========================================
+
+- name: Success notification
+  ansible.builtin.debug:
+    msg: "✅ Backup completed successfully!"
+  when: backup_successful | default(false)
+
+- name: Failure notification
+  ansible.builtin.debug:
+    msg: "❌ Backup FAILED! Check logs for details."
+  when: not backup_successful | default(true)

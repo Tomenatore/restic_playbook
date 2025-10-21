@@ -1,0 +1,292 @@
+---
+# ========================================
+# Example 1: Simple Backup to S3
+# ========================================
+
+- name: Simple Backup to S3
+  hosts: webservers
+  become: yes
+  
+  roles:
+    - role: restic_backup
+      vars:
+        s3_bucket: "company-backups"
+        s3_region: "eu-central-1"
+        backup_sources:
+          - path: "/var/www"
+            tags: ["web"]
+            enabled: true
+
+---
+# ========================================
+# Example 2: With External Pre/Post Task Files
+# ========================================
+
+- name: Backup with External Task Files
+  hosts: dbservers
+  become: yes
+  
+  roles:
+    - role: restic_backup
+      vars:
+        backup_target_type: "s3"
+        s3_bucket: "db-backups"
+        
+        backup_sources:
+          - path: "/var/backups"
+            tags: ["database"]
+            enabled: true
+        
+        pre_backup_tasks_file: "{{ playbook_dir }}/tasks/pre_backup_tasks.yml"
+        post_backup_tasks_file: "{{ playbook_dir }}/tasks/post_backup_tasks.yml"
+
+---
+# ========================================
+# Example 3: MySQL Database Backup
+# ========================================
+
+- name: Backup MySQL Databases
+  hosts: mysql_servers
+  become: yes
+  
+  roles:
+    - role: restic_backup
+      vars:
+        s3_bucket: "mysql-backups"
+        
+        backup_sources:
+          - path: "/var/backups/mysql"
+            tags: ["database", "mysql"]
+            enabled: true
+        
+        pre_backup_tasks_file: "{{ playbook_dir }}/tasks/mysql_pre_backup.yml"
+        post_backup_tasks_file: "{{ playbook_dir }}/tasks/mysql_post_backup.yml"
+
+---
+# ========================================
+# Example 4: Local Backup to NFS
+# ========================================
+
+- name: Backup to NFS Mount
+  hosts: appservers
+  become: yes
+  
+  roles:
+    - role: restic_backup
+      vars:
+        backup_target_type: "local"
+        local_backup_path: "/mnt/nfs-backup/restic"
+        
+        backup_sources:
+          - path: "/opt/myapp"
+            tags: ["application"]
+            enabled: true
+
+---
+# ========================================
+# Example 5: Minimal Configuration
+# ========================================
+
+- name: Minimal Backup
+  hosts: all
+  become: yes
+  
+  roles:
+    - role: restic_backup
+      vars:
+        s3_bucket: "minimal-backup"
+        backup_sources:
+          - path: "/etc"
+            tags: ["config"]
+            enabled: true
+
+---
+# ========================================
+# Example 6: Multi-Environment Setup
+# ========================================
+
+- name: Production Backup
+  hosts: production
+  become: yes
+  
+  roles:
+    - role: restic_backup
+      vars:
+        s3_bucket: "prod-backups"
+        backup_interval_hours: 24
+        
+        backup_time_window:
+          enabled: true
+          start_hour: 2
+          end_hour: 5
+        
+        backup_sources:
+          - path: "/var/www"
+            tags: ["web", "production"]
+            enabled: true
+        
+        pre_backup_tasks_file: "{{ playbook_dir }}/tasks/prod_pre_backup.yml"
+        post_backup_tasks_file: "{{ playbook_dir }}/tasks/prod_post_backup.yml"
+
+- name: Staging Backup
+  hosts: staging
+  become: yes
+  
+  roles:
+    - role: restic_backup
+      vars:
+        s3_bucket: "staging-backups"
+        backup_interval_hours: 12
+
+- name: Development Backup
+  hosts: development
+  become: yes
+  
+  roles:
+    - role: restic_backup
+      vars:
+        backup_target_type: "local"
+        local_backup_path: "/mnt/dev-backup"
+        backup_interval_hours: 6
+
+---
+# ========================================
+# Example 7: Time Window Backup
+# ========================================
+
+- name: Backup Only During Night Hours
+  hosts: all
+  become: yes
+  
+  roles:
+    - role: restic_backup
+      vars:
+        s3_bucket: "night-backups"
+        backup_interval_hours: 4
+        
+        # Only between 22:00 and 06:00
+        backup_time_window:
+          enabled: true
+          start_hour: 22
+          end_hour: 6
+        
+        backup_sources:
+          - path: "/var/www"
+            tags: ["web"]
+            enabled: true
+
+---
+# ========================================
+# Example 8: Group-Specific Configuration
+# ========================================
+# Configuration stored in group_vars
+
+- name: Backup with Group Variables
+  hosts: all
+  become: yes
+  
+  roles:
+    - restic_backup
+    # All config loaded from:
+    # - group_vars/all/vars.yml
+    # - group_vars/webservers/vars.yml
+    # - group_vars/dbservers/vars.yml
+
+---
+# ========================================
+# Example 9: Multiple Sources with Different Tags
+# ========================================
+
+- name: Multiple Backup Sources
+  hosts: all
+  become: yes
+  
+  roles:
+    - role: restic_backup
+      vars:
+        s3_bucket: "multi-source-backups"
+        
+        backup_sources:
+          - path: "/var/www"
+            tags: ["web", "production"]
+            enabled: true
+          - path: "/etc"
+            tags: ["config", "system"]
+            enabled: true
+          - path: "/var/backups"
+            tags: ["dumps", "database"]
+            enabled: true
+          - path: "/opt/applications"
+            tags: ["applications"]
+            enabled: true
+
+---
+# ========================================
+# Example 10: Custom Retention Policy
+# ========================================
+
+- name: Backup with Custom Retention
+  hosts: all
+  become: yes
+  
+  roles:
+    - role: restic_backup
+      vars:
+        s3_bucket: "long-term-backups"
+        
+        backup_sources:
+          - path: "/var/www"
+            tags: ["web"]
+            enabled: true
+        
+        retention_policy:
+          keep_last: 14
+          keep_hourly: 48
+          keep_daily: 30
+          keep_weekly: 12
+          keep_monthly: 24
+          keep_yearly: 10
+
+---
+# ========================================
+# Example 11: MinIO Backend
+# ========================================
+
+- name: Backup to MinIO
+  hosts: all
+  become: yes
+  
+  roles:
+    - role: restic_backup
+      vars:
+        backup_target_type: "s3"
+        s3_bucket: "restic-backups"
+        s3_region: "us-east-1"
+        s3_endpoint: "https://minio.example.com"
+        
+        backup_sources:
+          - path: "/var/www"
+            tags: ["web"]
+            enabled: true
+
+---
+# ========================================
+# Example 12: Wasabi Cloud Storage
+# ========================================
+
+- name: Backup to Wasabi
+  hosts: all
+  become: yes
+  
+  roles:
+    - role: restic_backup
+      vars:
+        backup_target_type: "s3"
+        s3_bucket: "my-wasabi-bucket"
+        s3_region: "eu-central-1"
+        s3_endpoint: "https://s3.eu-central-1.wasabisys.com"
+        
+        backup_sources:
+          - path: "/var/www"
+            tags: ["web"]
+            enabled: true

@@ -1,0 +1,594 @@
+---
+# roles/restic_backup/tasks/main.yml
+# Restic Backup Role - Main Tasks
+
+# ========================================
+# INSTALLATION
+# ========================================
+
+- name: Enable EPEL repository (RHEL/Rocky/Alma)
+  ansible.builtin.dnf:
+    name: epel-release
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Install Restic (RHEL/Rocky/Alma)
+  ansible.builtin.dnf:
+    name: restic
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Install Restic (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name: restic
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+# ========================================
+# DIRECTORIES & CONFIGURATION
+# ========================================
+
+- name: Create Restic configuration directory
+  ansible.builtin.file:
+    path: "{{ restic_config_dir }}"
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+
+- name: Create log directory
+  ansible.builtin.file:
+    path: "{{ log_directory }}"
+    state: directory
+    mode: '0755'
+
+- name: Ensure Check_MK spool directory exists
+  ansible.builtin.file:
+    path: "{{ checkmk_spool_dir }}"
+    state: directory
+    mode: '0755'
+  when: enable_checkmk | bool
+
+- name: Create exclude file
+  ansible.builtin.copy:
+    dest: "{{ restic_config_dir }}/excludes.txt"
+    mode: '0644'
+    content: "{{ backup_excludes | join('\n') }}\n"
+
+# ========================================
+# BACKEND CONFIGURATION - S3
+# ========================================
+
+- name: Build S3 repository URL
+  ansible.builtin.set_fact:
+    restic_repository: "s3:{% if s3_endpoint %}{{ s3_endpoint }}{% else %}s3.{{ s3_region }}.amazonaws.com{% endif %}/{{ s3_bucket }}{% if s3_prefix %}/{{ s3_prefix }}{% endif %}"
+    restic_env:
+      RESTIC_PASSWORD: "{{ restic_password }}"
+      AWS_ACCESS_KEY_ID: "{{ s3_access_key }}"
+      AWS_SECRET_ACCESS_KEY: "{{ s3_secret_key }}"
+      AWS_DEFAULT_REGION: "{{ s3_region }}"
+  when: backup_target_type == "s3"
+  no_log: "{{ not debug_mode }}"
+
+# ========================================
+# BACKEND CONFIGURATION - LOCAL
+# ========================================
+
+- name: Ensure local backup directory exists
+  ansible.builtin.file:
+    path: "{{ local_backup_path }}"
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+  when: backup_target_type == "local"
+
+- name: Build local repository URL
+  ansible.builtin.set_fact:
+    restic_repository: "{{ local_backup_path }}"
+    restic_env:
+      RESTIC_PASSWORD: "{{ restic_password }}"
+  when: backup_target_type == "local"
+  no_log: "{{ not debug_mode }}"
+
+# ========================================
+# REPOSITORY INITIALIZATION
+# ========================================
+
+- name: Check if repository exists
+  ansible.builtin.shell:
+    cmd: restic -r {{ restic_repository }} snapshots
+  environment: "{{ restic_env }}"
+  register: repo_check
+  failed_when: false
+  changed_when: false
+  no_log: "{{ not debug_mode }}"
+
+- name: Initialize repository if not exists
+  ansible.builtin.command:
+    cmd: restic -r {{ restic_repository }} init
+  environment: "{{ restic_env }}"
+  when: repo_check.rc != 0
+  register: repo_init
+  failed_when: 
+    - repo_init.rc != 0
+    - "'already initialized' not in repo_init.stderr"
+  changed_when: "'created restic repository' in repo_init.stdout or 'created restic repository' in repo_init.stderr"
+  no_log: "{{ not debug_mode }}"
+
+- name: Confirm repository status
+  ansible.builtin.debug:
+    msg: "Repository {{ restic_repository }} is ready"
+  when: repo_check.rc == 0 or (repo_init is defined and repo_init is changed)
+
+# ========================================
+# BACKUP TIMING
+# ========================================
+
+- name: Set timestamp for this run
+  ansible.builtin.set_fact:
+    current_timestamp: "{{ ansible_date_time.epoch | int }}"
+    current_hour: "{{ ansible_date_time.hour | int }}"
+    log_file: "{{ log_directory }}/backup-{{ ansible_date_time.date }}.log"
+
+- name: Read last backup timestamp
+  ansible.builtin.slurp:
+    src: "{{ restic_config_dir }}/last_backup_timestamp"
+  register: last_backup_file
+  failed_when: false
+  changed_when: false
+
+- name: Parse last backup timestamp
+  ansible.builtin.set_fact:
+    last_backup_timestamp: "{{ (last_backup_file.content | b64decode | trim) | int }}"
+  when: last_backup_file is succeeded and last_backup_file.content is defined
+
+- name: Set default for last backup
+  ansible.builtin.set_fact:
+    last_backup_timestamp: 0
+  when: last_backup_file is failed or last_backup_file.content is not defined
+
+- name: Calculate hours since last backup
+  ansible.builtin.set_fact:
+    hours_since_backup: "{{ ((current_timestamp | int - last_backup_timestamp | int) / 3600) | int }}"
+
+- name: Check if currently in backup time window
+  ansible.builtin.set_fact:
+    in_time_window: "{{
+      (backup_time_window.start_hour <= backup_time_window.end_hour and
+       current_hour | int >= backup_time_window.start_hour | int and
+       current_hour | int < backup_time_window.end_hour | int) or
+      (backup_time_window.start_hour > backup_time_window.end_hour and
+       (current_hour | int >= backup_time_window.start_hour | int or
+        current_hour | int < backup_time_window.end_hour | int))
+    }}"
+  when: backup_time_window.enabled | default(false)
+
+- name: Check if backup is due
+  ansible.builtin.set_fact:
+    backup_due: "{{ 
+      hours_since_backup | int >= backup_interval_hours | int and
+      (not backup_time_window.enabled | default(false) or in_time_window | default(true))
+    }}"
+
+- name: Display backup status
+  ansible.builtin.debug:
+    msg:
+      - "Backup target: {{ backup_target_type | upper }}"
+      - "Repository: {{ restic_repository }}"
+      - "Hours since last backup: {{ hours_since_backup }}"
+      - "Backup interval: {{ backup_interval_hours }} hours"
+      - "Backup due: {{ backup_due }}"
+
+- name: Exit if backup not due
+  ansible.builtin.meta: end_host
+  when: not backup_due | bool
+
+- name: Log backup start to syslog
+  community.general.syslogger:
+    msg: "Restic backup started - Repository: {{ restic_repository }}, Host: {{ inventory_hostname }}"
+    priority: "info"
+    facility: "{{ syslog_facility }}"
+    ident: "{{ syslog_tag }}"
+  when: enable_syslog | bool
+
+- name: Write backup start to log file
+  ansible.builtin.lineinfile:
+    path: "{{ log_file }}"
+    line: "{{ ansible_date_time.iso8601 }} - INFO - Backup started (Repository: {{ restic_repository }})"
+    create: yes
+    mode: '0644'
+
+# ========================================
+# BACKUP EXECUTION WITH ERROR HANDLING
+# ========================================
+
+- name: Execute backup with robust error handling
+  block:
+    # PRE-BACKUP ACTIONS
+    - name: Execute pre-backup tasks from file
+      ansible.builtin.include_tasks: "{{ pre_backup_tasks_file }}"
+      when:
+        - pre_backup_tasks_file is defined
+        - pre_backup_tasks_file | length > 0
+
+    # CHECK FORCE RESCAN
+    - name: Check if forced rescan is due
+      ansible.builtin.set_fact:
+        force_rescan_due: "{{
+          backup_force_rescan | bool or
+          (backup_force_rescan_day | int > 0 and ansible_date_time.day | int == backup_force_rescan_day | int)
+        }}"
+
+    - name: Log forced rescan status
+      ansible.builtin.debug:
+        msg: "Force rescan enabled: {{ force_rescan_due }}"
+      when: force_rescan_due | default(false)
+
+    # EXECUTE BACKUP
+    - name: Execute backup for each source
+      ansible.builtin.shell:
+        cmd: |
+          restic -r {{ restic_repository }} backup {{ item.path }} \
+            --exclude-file={{ restic_config_dir }}/excludes.txt \
+            {% for tag in item.tags %}--tag {{ tag }} {% endfor %} \
+            --tag auto \
+            {% if force_rescan_due | default(false) %}--force {% endif %} \
+            {% if restic_upload_limit_kbps > 0 %}--limit-upload {{ restic_upload_limit_kbps }} {% endif %} \
+            {% if restic_download_limit_kbps > 0 %}--limit-download {{ restic_download_limit_kbps }} {% endif %} \
+            --json
+        executable: /bin/bash
+      environment: "{{ restic_env | combine({'RESTIC_READ_CONCURRENCY': restic_read_concurrency | string}) }}"
+      loop: "{{ backup_sources | selectattr('enabled') | list }}"
+      loop_control:
+        label: "{{ item.path }}"
+      register: backup_results
+      failed_when: false
+      no_log: "{{ not debug_mode }}"
+
+    # EVALUATE BACKUP RESULTS
+    - name: Parse backup results
+      ansible.builtin.set_fact:
+        backup_successful: "{{ backup_results.results | rejectattr('rc', 'equalto', 0) | list | length == 0 }}"
+        backup_has_warnings: "{{ backup_results.results | selectattr('rc', 'equalto', 3) | list | length > 0 }}"
+
+    - name: Log backup details
+      ansible.builtin.lineinfile:
+        path: "{{ log_file }}"
+        line: "{{ ansible_date_time.iso8601 }} - INFO - Backed up {{ item.item.path }} (rc={{ item.rc }})"
+        create: yes
+        mode: '0644'
+      loop: "{{ backup_results.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
+      when: item.rc == 0
+
+    - name: Log backup warnings (incomplete snapshots)
+      ansible.builtin.lineinfile:
+        path: "{{ log_file }}"
+        line: "{{ ansible_date_time.iso8601 }} - WARNING - Incomplete snapshot for {{ item.item.path }} (rc=3)"
+        create: yes
+        mode: '0644'
+      loop: "{{ backup_results.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
+      when: item.rc == 3
+
+    - name: Log backup failures
+      ansible.builtin.lineinfile:
+        path: "{{ log_file }}"
+        line: "{{ ansible_date_time.iso8601 }} - ERROR - Failed to backup {{ item.item.path }}: {{ item.stderr | default('Unknown error') }} (rc={{ item.rc }})"
+        create: yes
+        mode: '0644'
+      loop: "{{ backup_results.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
+      when: item.rc not in [0, 3]
+
+    # RETENTION POLICY
+    - name: Apply retention policy and prune
+      ansible.builtin.command:
+        cmd: >
+          restic -r {{ restic_repository }} forget
+          --keep-last {{ retention_policy.keep_last }}
+          --keep-hourly {{ retention_policy.keep_hourly }}
+          --keep-daily {{ retention_policy.keep_daily }}
+          --keep-weekly {{ retention_policy.keep_weekly }}
+          --keep-monthly {{ retention_policy.keep_monthly }}
+          --keep-yearly {{ retention_policy.keep_yearly }}
+          --prune
+      environment: "{{ restic_env }}"
+      register: forget_result
+      failed_when: false
+      changed_when: "'prune' in forget_result.stdout"
+      no_log: "{{ not debug_mode }}"
+      when: backup_successful | default(false)
+
+    - name: Log retention policy execution
+      ansible.builtin.lineinfile:
+        path: "{{ log_file }}"
+        line: "{{ ansible_date_time.iso8601 }} - INFO - Retention policy applied and repository pruned"
+        create: yes
+        mode: '0644'
+      when: 
+        - backup_successful | default(false)
+        - forget_result is defined
+        - forget_result.rc == 0
+
+    # REPOSITORY STATISTICS
+    - name: Retrieve repository statistics
+      ansible.builtin.command:
+        cmd: restic -r {{ restic_repository }} stats --mode restore-size --json
+      environment: "{{ restic_env }}"
+      register: stats_result
+      failed_when: false
+      changed_when: false
+      no_log: "{{ not debug_mode }}"
+      when: backup_successful | default(false)
+
+    - name: Parse statistics
+      ansible.builtin.set_fact:
+        backup_stats: "{{ stats_result.stdout | from_json }}"
+      when: 
+        - backup_successful | default(false)
+        - stats_result is defined
+        - stats_result.rc == 0
+        - stats_result.stdout | length > 0
+      failed_when: false
+
+    - name: Display backup statistics
+      ansible.builtin.debug:
+        msg:
+          - "Total files: {{ backup_stats.total_file_count | default('N/A') }}"
+          - "Total size: {{ (backup_stats.total_size | default(0) / 1024 / 1024 / 1024) | round(2) }} GB"
+      when: 
+        - backup_successful | default(false)
+        - backup_stats is defined
+
+  rescue:
+    # HANDLE CRITICAL ERRORS
+    - name: Log critical backup error
+      ansible.builtin.lineinfile:
+        path: "{{ log_file }}"
+        line: "{{ ansible_date_time.iso8601 }} - CRITICAL - Backup process encountered critical error"
+        create: yes
+        mode: '0644'
+
+    - name: Set backup failure flag
+      ansible.builtin.set_fact:
+        backup_successful: false
+
+  always:
+    # ALWAYS RUN POST-BACKUP TASKS
+    - name: Execute post-backup tasks from file
+      ansible.builtin.include_tasks: "{{ post_backup_tasks_file }}"
+      when:
+        - post_backup_tasks_file is defined
+        - post_backup_tasks_file | length > 0
+
+    # LOGGING & NOTIFICATIONS
+    - name: Log backup success to syslog
+      community.general.syslogger:
+        msg: "Restic backup completed successfully - {{ backup_results.results | length }} paths backed up"
+        priority: "info"
+        facility: "{{ syslog_facility }}"
+        ident: "{{ syslog_tag }}"
+      when:
+        - enable_syslog | bool
+        - backup_successful | default(false)
+
+    - name: Write backup success to log file
+      ansible.builtin.lineinfile:
+        path: "{{ log_file }}"
+        line: "{{ ansible_date_time.iso8601 }} - INFO - Backup completed successfully - {{ backup_results.results | length }} paths backed up"
+        create: yes
+        mode: '0644'
+      when: backup_successful | default(false)
+
+    - name: Send backup success to Check_MK
+      ansible.builtin.copy:
+        dest: "{{ checkmk_spool_dir }}/{{ ansible_date_time.epoch }}_{{ checkmk_service_name }}"
+        mode: '0644'
+        content: |
+          0 {{ checkmk_service_name }} - Backup completed successfully | Repository: {{ restic_repository }}, Paths: {{ backup_results.results | length }}, Time: {{ ansible_date_time.iso8601 }}
+      when:
+        - enable_checkmk | bool
+        - backup_successful | default(false)
+
+    # HANDLE FAILURES
+    - name: Log backup failure to syslog
+      community.general.syslogger:
+        msg: "Restic backup FAILED - {{ item.stderr | default('Unknown error') }}"
+        priority: "err"
+        facility: "{{ syslog_facility }}"
+        ident: "{{ syslog_tag }}"
+      loop: "{{ backup_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.path | default('unknown') }}"
+      when:
+        - enable_syslog | bool
+        - not backup_successful | default(true)
+        - item.rc not in [0, 3]
+
+    - name: Prepare Check_MK failure details
+      ansible.builtin.set_fact:
+        failed_paths_list: "{{ backup_results.results | default([]) | selectattr('rc', 'ne', 0) | selectattr('rc', 'ne', 3) | map(attribute='item.path') | list | join(', ') }}"
+        failed_count: "{{ backup_results.results | default([]) | selectattr('rc', 'ne', 0) | selectattr('rc', 'ne', 3) | list | length }}"
+      when:
+        - enable_checkmk | bool
+        - not backup_successful | default(true)
+
+    - name: Send backup failure to Check_MK
+      ansible.builtin.copy:
+        dest: "{{ checkmk_spool_dir }}/{{ ansible_date_time.epoch }}_{{ checkmk_service_name }}"
+        mode: '0644'
+        content: |
+          2 {{ checkmk_service_name }} - Backup FAILED! | Failed paths: {{ failed_count }}/{{ backup_results.results | length }} ({{ failed_paths_list }}), Repository: {{ restic_repository }}, Time: {{ ansible_date_time.iso8601 }}
+      when:
+        - enable_checkmk | bool
+        - not backup_successful | default(true)
+
+    # CLEANUP OLD CHECK_MK FILES
+    - name: Cleanup old Check_MK spool files for backup service
+      ansible.builtin.find:
+        paths: "{{ checkmk_spool_dir }}"
+        patterns: "*_{{ checkmk_service_name }}"
+        age: "1h"
+      register: old_backup_spool_files
+      when: enable_checkmk | bool
+
+    - name: Remove old backup spool files
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ old_backup_spool_files.files | default([]) }}"
+      loop_control:
+        label: "{{ item.path }}"
+      when: enable_checkmk | bool
+
+    # UPDATE TIMESTAMP ONLY ON SUCCESS
+    - name: Update backup timestamp
+      ansible.builtin.copy:
+        content: "{{ current_timestamp }}"
+        dest: "{{ restic_config_dir }}/last_backup_timestamp"
+        mode: '0644'
+      when: backup_successful | default(false)
+
+# ========================================
+# LOG CLEANUP
+# ========================================
+
+- name: Find old log files
+  ansible.builtin.find:
+    paths: "{{ log_directory }}"
+    patterns: "*.log"
+    age: "{{ log_retention_days }}d"
+  register: old_logs
+
+- name: Delete old logs
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ old_logs.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+# ========================================
+# REPOSITORY CHECK
+# ========================================
+
+- name: Read last check timestamp
+  ansible.builtin.slurp:
+    src: "{{ restic_config_dir }}/last_check_timestamp"
+  register: last_check_file
+  failed_when: false
+  changed_when: false
+  when: enable_repository_check
+
+- name: Parse last check timestamp
+  ansible.builtin.set_fact:
+    last_check_timestamp: "{{ (last_check_file.content | b64decode | trim) | int }}"
+  when: 
+    - enable_repository_check
+    - last_check_file is succeeded
+    - last_check_file.content is defined
+
+- name: Set default for last check
+  ansible.builtin.set_fact:
+    last_check_timestamp: 0
+  when:
+    - enable_repository_check
+    - (last_check_file is failed or last_check_file.content is not defined)
+
+- name: Calculate days since last check
+  ansible.builtin.set_fact:
+    days_since_check: "{{ ((current_timestamp | int - last_check_timestamp | int) / 86400) | int }}"
+  when: enable_repository_check
+
+- name: Check if repository check is due
+  ansible.builtin.set_fact:
+    check_due: "{{ days_since_check | int >= check_interval_days | int }}"
+  when: enable_repository_check
+
+- name: Verify repository integrity
+  ansible.builtin.command:
+    cmd: restic -r {{ restic_repository }} check
+  environment: "{{ restic_env }}"
+  register: check_result
+  failed_when: check_result.rc != 0
+  changed_when: false
+  when:
+    - enable_repository_check
+    - check_due | default(false)
+  no_log: "{{ not debug_mode }}"
+
+- name: Log successful repository check
+  ansible.builtin.lineinfile:
+    path: "{{ log_file }}"
+    line: "{{ ansible_date_time.iso8601 }} - INFO - Repository integrity check PASSED"
+    create: yes
+    mode: '0644'
+  when:
+    - enable_repository_check
+    - check_due | default(false)
+    - check_result is defined
+    - check_result.rc == 0
+
+- name: Log successful repository check to syslog
+  community.general.syslogger:
+    msg: "Repository integrity check PASSED"
+    priority: "info"
+    facility: "{{ syslog_facility }}"
+    ident: "{{ syslog_tag }}"
+  when:
+    - enable_syslog | bool
+    - enable_repository_check
+    - check_due | default(false)
+    - check_result is defined
+    - check_result.rc == 0
+
+- name: Send repository check success to Check_MK
+  ansible.builtin.copy:
+    dest: "{{ checkmk_spool_dir }}/{{ ansible_date_time.epoch }}_{{ checkmk_check_service_name }}"
+    mode: '0644'
+    content: |
+      0 {{ checkmk_check_service_name }} - Repository integrity check PASSED | Repository: {{ restic_repository }}, Time: {{ ansible_date_time.iso8601 }}
+  when:
+    - enable_checkmk | bool
+    - enable_repository_check
+    - check_due | default(false)
+    - check_result is defined
+    - check_result.rc == 0
+
+- name: Cleanup old Check_MK spool files for check service
+  ansible.builtin.find:
+    paths: "{{ checkmk_spool_dir }}"
+    patterns: "*_{{ checkmk_check_service_name }}"
+    age: "1h"
+  register: old_check_spool_files
+  when: 
+    - enable_checkmk | bool
+    - enable_repository_check
+
+- name: Remove old check spool files
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ old_check_spool_files.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: 
+    - enable_checkmk | bool
+    - enable_repository_check
+
+- name: Update check timestamp
+  ansible.builtin.copy:
+    content: "{{ current_timestamp }}"
+    dest: "{{ restic_config_dir }}/last_check_timestamp"
+    mode: '0644'
+  when:
+    - enable_repository_check
+    - check_due | default(false)
+    - check_result is defined
+    - check_result.rc == 0

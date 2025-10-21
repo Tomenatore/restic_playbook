@@ -1,0 +1,49 @@
+---
+# group_vars/all/vault.yml
+# IMPORTANT: This file MUST be encrypted with ansible-vault!
+# Create with: ansible-vault create group_vars/all/vault.yml
+# Edit with: ansible-vault edit group_vars/all/vault.yml
+# NEVER commit this file unencrypted!
+
+# ========================================
+# AWS S3 CREDENTIALS
+# ========================================
+
+vault_aws_access_key: "AKIAIOSFODNN7EXAMPLE"
+vault_aws_secret_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+
+# ========================================
+# RESTIC PASSWORD
+# ========================================
+
+# CRITICAL: Without this password, ALL backups are LOST!
+# Store this password in multiple secure locations:
+# - Password manager (e.g., 1Password, Bitwarden)
+# - Encrypted USB drive in safe
+# - Physical paper in bank safe deposit box
+
+vault_restic_password: "super-secret-backup-password-change-this"
+
+# ========================================
+# OPTIONAL: DATABASE CREDENTIALS
+# ========================================
+# (if using pre-backup tasks for database dumps)
+
+# vault_mysql_root_password: "mysql-root-password"
+# vault_postgres_password: "postgres-password"
+
+# ========================================
+# ENCRYPTION COMMANDS
+# ========================================
+
+# To encrypt this file:
+# ansible-vault encrypt group_vars/all/vault.yml
+
+# To view encrypted content:
+# ansible-vault view group_vars/all/vault.yml
+
+# To edit encrypted file:
+# ansible-vault edit group_vars/all/vault.yml
+
+# To change vault password:
+# ansible-vault rekey group_vars/all/vault.yml
