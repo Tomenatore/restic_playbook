@@ -4,21 +4,15 @@
 # All variables are prefixed with 'restic_' for namespace isolation
 
 # ========================================
-# ENCRYPTION KEYS (2-Key System)
+# ENCRYPTION
 # ========================================
 
-# Generic key - used as fallback or for shared repositories
-restic_generic_password: "{{ vault_restic_generic_password | default('') }}"
+# Repository password - CRITICAL: Without this, backups are LOST!
+# Store in vault (group_vars/all/vault.yml encrypted with ansible-vault)
+restic_password: "{{ vault_restic_password | default('') }}"
 
-# Playbook-specific key - used for this specific playbook/environment
-restic_playbook_password: "{{ vault_restic_playbook_password | default('') }}"
-
-# Which password file to use (generic or playbook-specific)
-restic_playbook_password_file: "playbook.key"
-restic_generic_password_file: "generic.key"
-
-# Use playbook-specific key by default
-restic_use_playbook_key: true
+# Password file location on target system
+restic_password_file: "repository.key"
 
 # ========================================
 # BACKEND CONFIGURATION
@@ -29,8 +23,8 @@ restic_backend_type: "s3"  # s3, local, sftp, rest
 # S3 Backend (configure in group_vars or playbook)
 restic_s3_bucket: ""  # Example: "my-backup-bucket"
 restic_s3_region: ""  # Example: "eu-central-1"
-restic_s3_access_key: "{{ vault_aws_access_key | default('') }}"
-restic_s3_secret_key: "{{ vault_aws_secret_key | default('') }}"
+restic_s3_access_key: "{{ vault_s3_access_key | default('') }}"
+restic_s3_secret_key: "{{ vault_s3_secret_key | default('') }}"
 restic_s3_endpoint: ""  # Empty for AWS, or custom endpoint (MinIO, Wasabi, etc.)
 restic_s3_prefix: ""  # Optional path prefix in bucket, e.g. "restic"
 
@@ -111,29 +105,21 @@ restic_force_rescan_day: 0
 # ========================================
 
 # Backup timer settings
-restic_timer_on_calendar: "daily"  # or use cron-like syntax: "Mon,Wed,Fri *-*-* 02:00:00"
-restic_timer_on_boot_sec: "15min"
-restic_timer_interval: "24h"
+restic_timer_on_calendar: "daily"  # Examples: "daily", "weekly", "Mon,Wed,Fri *-*-* 02:00:00", "hourly"
 restic_timer_persistent: true
 restic_timer_randomized_delay: "30min"
 restic_timer_accuracy: "1h"
 
 # Prune timer settings
 restic_prune_timer_on_calendar: "weekly"
-restic_prune_timer_on_boot_sec: "30min"
-restic_prune_timer_interval: "7d"
 
 # Check timer settings
 restic_check_timer_on_calendar: "weekly"
-restic_check_timer_on_boot_sec: "1h"
-restic_check_timer_interval: "7d"
 restic_check_read_data: false  # Set to true for full data integrity check (slower)
 restic_check_read_data_subset: ""  # Example: "1/12" (check 1/12 of data), "10%" (10% random), "50M" (50 MiB)
 
 # Scan timer settings
 restic_scan_timer_on_calendar: "daily"
-restic_scan_timer_on_boot_sec: "1h"
-restic_scan_timer_interval: "1d"
 
 # ========================================
 # PERFORMANCE & LIMITS
@@ -172,11 +158,23 @@ restic_retention_keep_yearly: 5
 # RESTIC LOCK MANAGEMENT
 # ========================================
 
-# NOTE: Restic uses native repository locks with a fixed 30-minute staleness threshold
-# The 'restic unlock' command automatically removes locks older than 30 minutes
-# This variable is kept for documentation purposes only
-# Restic's --retry-lock flag (configured above) handles temporary locks automatically
-restic_lock_max_age_hours: 12  # Informational only - Restic uses 30 minutes internally
+# Maximum age of locks before cleanup (stale lock detection)
+# If a lock is older than this threshold, it's considered stale (likely from a crash)
+# and will be removed via 'restic unlock' in ExecStartPre
+#
+# Note: Restic's 'restic unlock' command removes locks older than 30 minutes (hardcoded)
+# This variable controls WHEN we call 'restic unlock', not what it removes
+#
+# Locks younger than this threshold are handled by --retry-lock
+restic_lock_max_age_hours: 12  # Threshold for stale lock detection
+
+# Retry configuration for failed operations
+# Services will retry on failure (e.g., when repository is locked)
+# RestartSec: Wait time between retry attempts
+restic_restart_sec: "15min"  # Wait 15 minutes before retry
+
+# Maximum number of restart attempts (0 = infinite)
+restic_restart_max_attempts: 0  # Keep trying until lock is released
 
 # ========================================
 # DIRECTORIES
@@ -190,6 +188,9 @@ restic_scripts_dir: "/usr/local/bin/restic"
 
 # Hooks directory (can be overridden per source)
 restic_hooks_dir: "/etc/restic/hooks"
+
+# Helper scripts directory for admin tools (restore, stats, etc.)
+restic_helpers_dir: "/opt/restic"
 
 # ========================================
 # HOOKS

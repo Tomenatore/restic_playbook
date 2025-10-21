@@ -14,13 +14,13 @@ STATS_FILE="{{ restic_config_dir }}/stats-${SOURCE_NAME}.json"
 logger -t "${LOG_TAG}" -p user.info "Starting snapshot scan for ${SOURCE_NAME}"
 
 # Get snapshots
-if ! SNAPSHOTS=$(restic snapshots --tag "${SOURCE_NAME}" --json 2>&1); then
+if ! SNAPSHOTS=$(restic snapshots --tag "${SOURCE_NAME}" --json --retry-lock 30s 2>&1); then
     logger -t "${LOG_TAG}" -p user.error "Failed to retrieve snapshots"
     exit 1
 fi
 
 # Get repository stats
-if ! STATS=$(restic stats --mode restore-size --json 2>&1); then
+if ! STATS=$(restic stats --mode restore-size --json --retry-lock 30s 2>&1); then
     logger -t "${LOG_TAG}" -p user.error "Failed to retrieve repository stats"
     exit 1
 fi

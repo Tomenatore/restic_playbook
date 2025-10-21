@@ -6,23 +6,28 @@
 # NEVER commit this file unencrypted!
 
 # ========================================
-# AWS S3 CREDENTIALS
+# S3 CREDENTIALS (AWS, MinIO, Wasabi, etc.)
 # ========================================
 
-vault_aws_access_key: "AKIAIOSFODNN7EXAMPLE"
-vault_aws_secret_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+vault_s3_access_key: "AKIAIOSFODNN7EXAMPLE"
+vault_s3_secret_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 
 # ========================================
-# RESTIC PASSWORD
+# RESTIC ENCRYPTION PASSWORD
 # ========================================
 
 # CRITICAL: Without this password, ALL backups are LOST!
-# Store this password in multiple secure locations:
+# Store password in multiple secure locations:
 # - Password manager (e.g., 1Password, Bitwarden)
 # - Encrypted USB drive in safe
 # - Physical paper in bank safe deposit box
+# - Separate encrypted backup
+#
+# WARNING: Restic uses ONE password per repository!
+# If you change this password, you MUST re-initialize the repository
+# (which means losing all existing backups)
 
-vault_restic_password: "super-secret-backup-password-change-this"
+vault_restic_password: "CHANGE-THIS-IMMEDIATELY-super-secret-password"
 
 # ========================================
 # OPTIONAL: DATABASE CREDENTIALS

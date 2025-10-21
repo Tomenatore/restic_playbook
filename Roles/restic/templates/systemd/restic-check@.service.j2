@@ -11,7 +11,7 @@ Group=root
 
 # Environment
 Environment="RESTIC_REPOSITORY={{ restic_repository }}"
-Environment="RESTIC_PASSWORD_FILE={{ restic_config_dir }}/passwords/{{ restic_playbook_password_file }}"
+Environment="RESTIC_PASSWORD_FILE={{ restic_config_dir }}/passwords/{{ restic_password_file }}"
 {% if restic_backend_type == "s3" %}
 Environment="AWS_ACCESS_KEY_ID={{ restic_s3_access_key }}"
 Environment="AWS_SECRET_ACCESS_KEY={{ restic_s3_secret_key }}"
@@ -21,17 +21,37 @@ Environment="AWS_DEFAULT_REGION={{ restic_s3_region }}"
 # CheckMK Custom Tag
 Environment="CHECKMK_TAG=restic_check_%i"
 
-# Restic native lock cleanup (remove stale repository locks)
-# Restic's unlock command removes locks older than 30 minutes
-ExecStartPre=/bin/bash -c 'restic unlock || true'
+# Intelligent lock check - only unlock stale locks, let --retry-lock handle fresh locks
+{% set lock_max_age = item.lock_max_age_hours | default(restic_lock_max_age_hours) %}
+ExecStartPre=/bin/bash -c ' \
+  MAX_AGE_SECONDS=$(({{ lock_max_age }} * 3600)); \
+  LOCKS=$(restic list locks --no-lock 2>/dev/null || echo ""); \
+  \
+  if [ -n "$LOCKS" ]; then \
+    LOCK_TIME=$(echo "$LOCKS" | head -1 | grep -oP "(?<=at )[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}" | head -1); \
+    if [ -n "$LOCK_TIME" ]; then \
+      LOCK_TS=$(date -d "$LOCK_TIME" +%%s 2>/dev/null || echo 0); \
+      if [ $LOCK_TS -gt 0 ]; then \
+        CURRENT_TS=$(date +%%s); \
+        LOCK_AGE=$((CURRENT_TS - LOCK_TS)); \
+        \
+        if [ $LOCK_AGE -gt $MAX_AGE_SECONDS ]; then \
+          logger -t restic-check -p user.warning "Removing stale lock for %i (age: ${LOCK_AGE}s > ${MAX_AGE_SECONDS}s)"; \
+          restic unlock || true; \
+        else \
+          logger -t restic-check -p user.info "Lock for %i exists (age: ${LOCK_AGE}s), will use --retry-lock to wait"; \
+        fi; \
+      fi; \
+    fi; \
+  fi'
 
 # Execute repository check with configurable data verification
 {% if restic_check_read_data %}
-ExecStart=/usr/bin/restic check --read-data
+ExecStart=/usr/bin/restic check --read-data --retry-lock 30s
 {% elif restic_check_read_data_subset | length > 0 %}
-ExecStart=/usr/bin/restic check --read-data-subset={{ restic_check_read_data_subset }}
+ExecStart=/usr/bin/restic check --read-data-subset={{ restic_check_read_data_subset }} --retry-lock 30s
 {% else %}
-ExecStart=/usr/bin/restic check
+ExecStart=/usr/bin/restic check --retry-lock 30s
 {% endif %}
 
 # Send CheckMK status
@@ -54,6 +74,14 @@ Nice={{ restic_nice_level }}
 PrivateTmp=yes
 ProtectSystem=strict
 ReadWritePaths={{ restic_config_dir }} {{ restic_checkmk_spool_dir }}
+
+# Restart behavior - retry on failure (e.g., locked repository)
+Restart=on-failure
+RestartSec={{ restic_restart_sec }}
+{% if restic_restart_max_attempts > 0 %}
+StartLimitBurst={{ restic_restart_max_attempts }}
+StartLimitIntervalSec=0
+{% endif %}
 
 [Install]
 WantedBy=multi-user.target

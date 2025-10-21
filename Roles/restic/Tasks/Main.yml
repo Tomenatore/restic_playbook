@@ -5,9 +5,9 @@
 # This role deploys Restic backup solution with systemd integration
 # - Systemd service units per backup source and job type
 # - Native Restic hook system for pre/post backup tasks
-# - 2-key encryption system (generic + playbook-specific)
+# - Secure encryption with password file
 # - CheckMK monitoring integration
-# - Lock management with stale lock detection
+# - Lock management with stale lock detection and automatic retry
 
 # ========================================
 # INSTALLATION
@@ -20,23 +20,15 @@
     - install
 
 # ========================================
-# DIRECTORIES & CONFIGURATION
+# SETUP (Directories & Encryption)
 # ========================================
 
-- name: Create directories and configuration files
-  ansible.builtin.include_tasks: directories.yml
+- name: Setup directories and encryption
+  ansible.builtin.include_tasks: setup.yml
   tags:
     - restic
+    - setup
     - config
-
-# ========================================
-# ENCRYPTION KEYS (2-Key System)
-# ========================================
-
-- name: Deploy encryption keys
-  ansible.builtin.include_tasks: encryption.yml
-  tags:
-    - restic
     - encryption
 
 # ========================================
@@ -60,41 +52,23 @@
     - repository
 
 # ========================================
-# DEPLOY SCRIPTS
+# SCRIPTS AND HOOKS
 # ========================================
 
-- name: Deploy backup and monitoring scripts
-  ansible.builtin.include_tasks: scripts.yml
+- name: Deploy scripts and hooks
+  ansible.builtin.include_tasks: scripts_and_hooks.yml
   tags:
     - restic
     - scripts
-
-# ========================================
-# DEPLOY HOOKS
-# ========================================
-
-- name: Deploy pre/post backup hooks
-  ansible.builtin.include_tasks: hooks.yml
-  tags:
-    - restic
     - hooks
 
 # ========================================
-# DEPLOY SYSTEMD UNITS
+# SYSTEMD UNITS AND TIMERS
 # ========================================
 
-- name: Deploy systemd service and timer units
-  ansible.builtin.include_tasks: systemd.yml
+- name: Deploy and manage systemd units
+  ansible.builtin.include_tasks: systemd_units.yml
   tags:
     - restic
     - systemd
-
-# ========================================
-# ENABLE AND START TIMERS
-# ========================================
-
-- name: Enable and start systemd timers
-  ansible.builtin.include_tasks: timers.yml
-  tags:
-    - restic
     - timers

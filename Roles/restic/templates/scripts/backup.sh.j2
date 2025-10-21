@@ -23,21 +23,23 @@ fi
 # Log start
 logger -t "${LOG_TAG}" -p user.info "Starting backup for ${SOURCE_NAME}"
 
-# Build restic command
-RESTIC_CMD="restic backup ${SOURCE_PATH}"
+# Build restic command in one go
+RESTIC_CMD="restic backup ${SOURCE_PATH} \
+  --tag auto --tag ${SOURCE_NAME} \
+  --limit-upload {{ restic_upload_limit_kbps }} \
+  --limit-download {{ restic_download_limit_kbps }} \
+  --retry-lock {{ item.retry_lock_duration | default(restic_retry_lock_duration) }} \
+  --json"
 
-# Add exclusions
-if [ -f "${EXCLUDE_FILE}" ]; then
-    RESTIC_CMD="${RESTIC_CMD} --exclude-file=${EXCLUDE_FILE}"
-fi
+# Add exclusions if file exists
+[ -f "${EXCLUDE_FILE}" ] && RESTIC_CMD="${RESTIC_CMD} --exclude-file=${EXCLUDE_FILE}"
 
-# Add tags
+# Add user tags
 for TAG in ${SOURCE_TAGS}; do
     RESTIC_CMD="${RESTIC_CMD} --tag ${TAG}"
 done
-RESTIC_CMD="${RESTIC_CMD} --tag auto --tag ${SOURCE_NAME}"
 
-# Add force rescan if configured
+# Add force rescan if configured globally
 {% if restic_force_rescan %}
 RESTIC_CMD="${RESTIC_CMD} --force"
 {% endif %}
@@ -50,23 +52,6 @@ if [ "${CURRENT_DAY}" = "{{ restic_force_rescan_day }}" ]; then
     logger -t "${LOG_TAG}" -p user.info "Force rescan enabled (day ${CURRENT_DAY})"
 fi
 {% endif %}
-
-# Add bandwidth limits
-{% if restic_upload_limit_kbps > 0 %}
-RESTIC_CMD="${RESTIC_CMD} --limit-upload {{ restic_upload_limit_kbps }}"
-{% endif %}
-{% if restic_download_limit_kbps > 0 %}
-RESTIC_CMD="${RESTIC_CMD} --limit-download {{ restic_download_limit_kbps }}"
-{% endif %}
-
-# Add retry lock (wait if repository is locked)
-{% set retry_lock = item.retry_lock_duration | default(restic_retry_lock_duration) %}
-{% if retry_lock | length > 0 %}
-RESTIC_CMD="${RESTIC_CMD} --retry-lock {{ retry_lock }}"
-{% endif %}
-
-# Add JSON output
-RESTIC_CMD="${RESTIC_CMD} --json"
 
 # Execute backup
 logger -t "${LOG_TAG}" -p user.info "Executing: ${RESTIC_CMD}"

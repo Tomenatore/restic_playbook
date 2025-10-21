@@ -370,3 +370,162 @@
     # - group_vars/webservers/vars.yml
     # - group_vars/dbservers/vars.yml
     # - group_vars/all/vault.yml (encrypted)
+
+---
+# ========================================
+# Example 16: Advanced Lock Management & Retry Configuration
+# ========================================
+
+- name: Advanced Lock Management
+  hosts: all
+  become: yes
+
+  roles:
+    - role: restic
+      vars:
+        restic_s3_bucket: "advanced-lock-config"
+
+        # Global lock and retry settings
+        restic_lock_max_age_hours: 12        # Stale lock threshold (crash detection)
+        restic_retry_lock_duration: "5m"     # Default retry-lock for backups
+        restic_restart_sec: "15min"          # Wait between systemd retries
+        restic_restart_max_attempts: 0       # Unlimited retries (0 = infinite)
+
+        # Repository check configuration
+        restic_check_read_data_subset: "1/12"  # Check 1/12 of data monthly
+
+        restic_backup_sources:
+          # Critical database - aggressive settings
+          - name: "critical-db"
+            path: "/var/lib/mysql"
+            tags: ["critical", "database"]
+            enabled: true
+            lock_max_age_hours: 4              # More aggressive crash detection
+            retry_lock_duration: "10m"         # Wait longer for locks
+            timeout_seconds: 7200              # 2 hour timeout for large dumps
+
+          # Large file storage - patient settings
+          - name: "large-storage"
+            path: "/mnt/storage"
+            tags: ["storage", "files"]
+            enabled: true
+            lock_max_age_hours: 24             # Tolerant of long operations
+            retry_lock_duration: "15m"         # Very patient
+            timeout_seconds: 0                 # No timeout (unlimited)
+
+          # Fast backup - standard settings
+          - name: "etc"
+            path: "/etc"
+            tags: ["config"]
+            enabled: true
+            # Uses global defaults:
+            # - lock_max_age_hours: 12
+            # - retry_lock_duration: "5m"
+            # - timeout_seconds: 0
+
+---
+# ========================================
+# Example 17: Custom Timer Schedules
+# ========================================
+
+- name: Custom Backup Schedules
+  hosts: all
+  become: yes
+
+  roles:
+    - role: restic
+      vars:
+        restic_s3_bucket: "custom-schedules"
+
+        # Backup runs daily at 2am with 30min randomization
+        restic_timer_on_calendar: "02:00"
+        restic_timer_randomized_delay: "30min"
+        restic_timer_persistent: true          # Run after boot if missed
+        restic_timer_accuracy: "1h"            # Allow up to 1h delay
+
+        # Prune weekly on Sunday at 4am (when backups unlikely to run)
+        restic_prune_timer_on_calendar: "Sun *-*-* 04:00:00"
+
+        # Check weekly on Saturday at 3am
+        restic_check_timer_on_calendar: "Sat *-*-* 03:00:00"
+
+        # Scan daily at 5am
+        restic_scan_timer_on_calendar: "daily"
+
+        restic_backup_sources:
+          - name: "var-www"
+            path: "/var/www"
+            tags: ["web"]
+            enabled: true
+
+---
+# ========================================
+# Example 18: Multi-Repository Setup (Avoid Lock Conflicts)
+# ========================================
+
+- name: Separate Repositories per Source
+  hosts: all
+  become: yes
+
+  roles:
+    - role: restic
+      vars:
+        restic_backend_type: "s3"
+        restic_s3_bucket: "multi-repo-backups"
+
+        # Each source gets its own repository path to avoid lock conflicts
+        # This allows true parallel backups
+        restic_s3_prefix: "{{ inventory_hostname }}/{{ item.name }}"
+
+        # All backups can run simultaneously at 2am
+        restic_timer_on_calendar: "02:00"
+
+        restic_backup_sources:
+          - name: "database"
+            path: "/var/lib/mysql"
+            tags: ["database"]
+            enabled: true
+            # Repository: s3:bucket/hostname/database
+
+          - name: "www"
+            path: "/var/www"
+            tags: ["web"]
+            enabled: true
+            # Repository: s3:bucket/hostname/www
+
+          - name: "files"
+            path: "/mnt/files"
+            tags: ["files"]
+            enabled: true
+            # Repository: s3:bucket/hostname/files
+
+        # Note: Each source has independent locks = no conflicts!
+
+---
+# ========================================
+# Example 19: Bandwidth-Limited Backup
+# ========================================
+
+- name: Bandwidth-Limited Backup
+  hosts: remote_sites
+  become: yes
+
+  roles:
+    - role: restic
+      vars:
+        restic_s3_bucket: "bandwidth-limited"
+
+        # Limit upload/download to avoid saturating connection
+        restic_upload_limit_kbps: 5120       # Max 5 MB/s upload
+        restic_download_limit_kbps: 10240    # Max 10 MB/s download
+
+        # Lower priority to avoid impacting production
+        restic_cpu_quota: 50                 # Max 50% CPU
+        restic_io_weight: 50                 # Lower I/O priority
+        restic_nice_level: 19                # Lowest CPU scheduling priority
+
+        restic_backup_sources:
+          - name: "data"
+            path: "/var/data"
+            tags: ["data"]
+            enabled: true

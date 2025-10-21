@@ -10,13 +10,13 @@ This playbook deploys a complete Restic backup solution that runs independently 
 
 - **Systemd Integration**: Backups run via systemd timers (decoupled from Ansible)
 - **Instance-Based Units**: Per-source systemd services using `@` instances
-- **2-Key Encryption**: Generic + playbook-specific encryption keys
-- **Native Restic Locks**: Automatic stale lock cleanup (>30 min)
+- **Intelligent Lock Management**: Automatic stale lock cleanup with retry logic
 - **Restic Hooks**: Pre/post-backup shell scripts using Restic's native hook system
 - **CheckMK Monitoring**: Per-unit status reporting
 - **Multiple Job Types**: backup, prune, check, scan operations
 - **Resource Control**: CPU, I/O, and Nice level limits per service
 - **Flexible Configuration**: Per-source timeouts, retry-lock, and hooks
+- **S3-Compatible**: Works with AWS S3, MinIO, Wasabi, Backblaze B2, and others
 
 ## Quick Start
 
@@ -36,10 +36,9 @@ ansible-vault create Group_vars/All/Vault.yml
 Add:
 ```yaml
 ---
-vault_aws_access_key: "YOUR_AWS_ACCESS_KEY"
-vault_aws_secret_key: "YOUR_AWS_SECRET_KEY"
-vault_restic_generic_password: "YOUR_GENERIC_PASSWORD"
-vault_restic_playbook_password: "YOUR_PLAYBOOK_PASSWORD"
+vault_s3_access_key: "YOUR_S3_ACCESS_KEY"
+vault_s3_secret_key: "YOUR_S3_SECRET_KEY"
+vault_restic_password: "YOUR_REPOSITORY_PASSWORD"
 ```
 
 ### 3. Configure Backup Sources
@@ -82,123 +81,10 @@ systemctl status restic-backup@var-www.timer
 journalctl -u 'restic-backup@*' -f
 ```
 
-## Architecture
-
-### Systemd Units
-
-- `restic-backup@<source>.service/.timer` - Backup per source
-- `restic-prune@<source>.service/.timer` - Retention enforcement
-- `restic-check@<source>.service/.timer` - Repository integrity check
-- `restic-scan@<source>.service/.timer` - Statistics collection
-
-### Directory Structure
-
-```
-/etc/restic/
-├── passwords/
-│   ├── generic.key
-│   └── playbook.key
-├── hooks/
-│   ├── pre-backup-<source>.sh
-│   └── post-backup-<source>.sh
-└── excludes.txt
-
-/usr/local/bin/restic/
-├── backup-<source>.sh
-├── scan-<source>.sh
-└── checkmk-status.sh
-```
-
-## Hook System
-
-Uses Restic's **native hook system** (RESTIC_PRE_SCRIPT, RESTIC_POST_SCRIPT).
-
-### Option 1: Global Hooks Directory
-
-```yaml
-restic_custom_hooks_dir: "{{ playbook_dir }}/hooks"
-```
-
-Create hooks as `hooks/pre-backup-<source>.sh` and `hooks/post-backup-<source>.sh`
-
-### Option 2: Per-Source Hooks
-
-```yaml
-restic_backup_sources:
-  - name: "database"
-    path: "/var/lib/postgresql"
-    hook_pre_script: "{{ playbook_dir }}/scripts/db-dump.sh"
-    hook_post_script: "{{ playbook_dir }}/scripts/db-cleanup.sh"
-```
-
-### Option 3: Manual Management
-
-Create hooks directly on target hosts in `/etc/restic/hooks/`
-
-See `hooks/pre-backup-example.sh` and `hooks/post-backup-example.sh` for examples.
-
-## Configuration
-
-### Backend Types
-
-- **S3**: AWS S3 or S3-compatible (MinIO, Wasabi, etc.)
-- **Local**: Local filesystem path
-- **SFTP**: Remote SFTP server
-- **REST**: REST server
-
-### Per-Source Options
-
-```yaml
-restic_backup_sources:
-  - name: "important-data"
-    path: "/data"
-    tags: ["critical"]
-    enabled: true
-    timeout_seconds: 7200              # Backup timeout
-    retry_lock_duration: "5m"          # Wait for lock
-    hook_pre_script: "path/to/pre.sh"  # Pre-backup hook
-    hook_post_script: "path/to/post.sh" # Post-backup hook
-```
-
-### Scheduling
-
-Edit timer variables in `Group_vars/All/Vars.yml`:
-
-```yaml
-restic_timer_on_calendar: "02:00"         # Daily at 2am
-restic_prune_timer_on_calendar: "weekly"  # Weekly
-restic_check_timer_on_calendar: "weekly"  # Weekly
-restic_scan_timer_on_calendar: "daily"    # Daily
-```
-
-## Monitoring
-
-### CheckMK
-
-Services automatically report to CheckMK spool directory:
-- `Restic_backup_<source>`
-- `Restic_prune_<source>`
-- `Restic_check_<source>`
-- `Restic_scan_<source>`
-
-### Systemd Management
-
-```bash
-# Start backup manually
-systemctl start restic-backup@var-www.service
-
-# Enable/disable timer
-systemctl enable restic-backup@var-www.timer
-systemctl disable restic-backup@var-www.timer
-
-# View logs
-journalctl -u restic-backup@var-www.service -n 100
-```
-
 ## Documentation
 
 - **Role Documentation**: `Roles/restic/Readme.md` - Complete role documentation
-- **Example Playbook**: `Playbook_examples.yml` - 15 usage examples
+- **Example Playbook**: `Playbook_examples.yml` - 19 usage examples
 - **Example Hooks**: `hooks/` - Pre/post backup hook examples
 - **Inventory**: `Inventory/hosts.ini.example` - Inventory example
 
@@ -252,9 +138,9 @@ restic_playbook/
 
 - All passwords encrypted with ansible-vault
 - Restic repositories encrypted with strong keys
-- 2-key system for multi-environment deployments
 - No credentials in logs (no_log enabled)
 - Systemd service hardening (PrivateTmp, ProtectSystem)
+- Repository password file with restrictive permissions (600)
 
 ## License
 

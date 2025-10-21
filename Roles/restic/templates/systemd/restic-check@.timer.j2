@@ -3,12 +3,7 @@ Description=Timer for Restic Repository Check %i
 Documentation=https://restic.readthedocs.io/
 
 [Timer]
-{% if restic_check_timer_on_calendar %}
 OnCalendar={{ restic_check_timer_on_calendar }}
-{% else %}
-OnBootSec={{ restic_check_timer_on_boot_sec }}
-OnUnitActiveSec={{ restic_check_timer_interval }}
-{% endif %}
 
 Persistent={{ restic_timer_persistent | lower }}
 RandomizedDelaySec={{ restic_timer_randomized_delay }}
