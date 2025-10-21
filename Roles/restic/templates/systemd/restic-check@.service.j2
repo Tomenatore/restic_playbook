@@ -21,9 +21,30 @@ Environment="AWS_DEFAULT_REGION={{ restic_s3_region }}"
 # CheckMK Custom Tag
 Environment="CHECKMK_TAG=restic_check_%i"
 
-# Restic native lock cleanup (remove stale repository locks)
-# Restic's unlock command removes locks older than 30 minutes
-ExecStartPre=/bin/bash -c 'restic unlock || true'
+# Intelligent lock check - only unlock if lock exists AND is stale
+{% set lock_max_age = item.lock_max_age_hours | default(restic_lock_max_age_hours) %}
+ExecStartPre=/bin/bash -c ' \
+  MAX_AGE_SECONDS=$(({{ lock_max_age }} * 3600)); \
+  LOCKS=$(restic list locks --no-lock 2>/dev/null || echo ""); \
+  \
+  if [ -n "$LOCKS" ]; then \
+    LOCK_TIME=$(echo "$LOCKS" | head -1 | grep -oP "(?<=at )[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}" | head -1); \
+    if [ -n "$LOCK_TIME" ]; then \
+      LOCK_TS=$(date -d "$LOCK_TIME" +%%s 2>/dev/null || echo 0); \
+      if [ $LOCK_TS -gt 0 ]; then \
+        CURRENT_TS=$(date +%%s); \
+        LOCK_AGE=$((CURRENT_TS - LOCK_TS)); \
+        \
+        if [ $LOCK_AGE -gt $MAX_AGE_SECONDS ]; then \
+          logger -t restic-check -p user.warning "Removing stale lock for %i (age: ${LOCK_AGE}s > ${MAX_AGE_SECONDS}s)"; \
+          restic unlock || true; \
+        else \
+          logger -t restic-check -p user.error "Lock for %i exists (age: ${LOCK_AGE}s < ${MAX_AGE_SECONDS}s), aborting - will retry later"; \
+          exit 1; \
+        fi; \
+      fi; \
+    fi; \
+  fi'
 
 # Execute repository check with configurable data verification
 {% if restic_check_read_data %}
