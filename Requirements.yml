@@ -1,24 +1,24 @@
 ---
 # requirements.yml
 # Ansible Collections Requirements
-# Install with: ansible-galaxy collection install -r requirements.yml
+# Install with: ansible-galaxy collection install -r Requirements.yml
 
 collections:
-  # Required for syslog logging
+  # Required: Basic Ansible modules
   - name: community.general
     version: ">=6.0.0"
 
-  # Optional: For MySQL database backups in pre_backup_tasks
-  # Uncomment if you use MySQL dumps
+  # Optional: For MySQL database management in hooks
+  # Uncomment if you use MySQL in your backup hooks
   # - name: community.mysql
   #   version: ">=3.0.0"
 
-  # Optional: For PostgreSQL database backups in pre_backup_tasks
-  # Uncomment if you use PostgreSQL dumps
+  # Optional: For PostgreSQL database management in hooks
+  # Uncomment if you use PostgreSQL in your backup hooks
   # - name: community.postgresql
   #   version: ">=2.0.0"
 
-  # Optional: For Docker container management in pre/post_backup_tasks
-  # Uncomment if you manage Docker containers
+  # Optional: For Docker container management in hooks
+  # Uncomment if you manage Docker containers in your hooks
   # - name: community.docker
   #   version: ">=3.0.0"
