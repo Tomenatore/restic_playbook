@@ -45,10 +45,10 @@
 
 ---
 # ========================================
-# Example 3: With Inline Hook Configuration
+# Example 3: With Per-Source Hook Scripts
 # ========================================
 
-- name: Backup with Inline Hooks
+- name: Backup with Per-Source Hooks
   hosts: mysql_servers
   become: yes
 
@@ -62,16 +62,9 @@
             path: "/var/backups/mysql"
             tags: ["database", "mysql"]
             enabled: true
-            # Pre-backup: dump database
-            pre_backup_commands:
-              - "mysqldump --all-databases > /var/backups/mysql/dump.sql"
-            # Post-backup: cleanup dump
-            post_backup_commands:
-              - "rm -f /var/backups/mysql/dump.sql"
-            # Optional: database dump helper
-            database_dump:
-              enabled: true
-              type: "mysql"
+            # Specify custom hook scripts for this source
+            hook_pre_script: "{{ playbook_dir }}/scripts/mysql-pre-backup.sh"
+            hook_post_script: "{{ playbook_dir }}/scripts/mysql-post-backup.sh"
 
 ---
 # ========================================
@@ -169,14 +162,10 @@
             path: "/var/lib/myapp"
             tags: ["application"]
             enabled: true
-            # Stop services before backup
-            stop_services:
-              - myapp
-              - nginx
-            # Start services after backup
-            start_services:
-              - myapp
-              - nginx
+            # Use hook scripts that stop/start services
+            # See hooks/pre-backup-example.sh for service management examples
+            hook_pre_script: "{{ playbook_dir }}/hooks/pre-backup-appdata.sh"
+            hook_post_script: "{{ playbook_dir }}/hooks/post-backup-appdata.sh"
 
 ---
 # ========================================
@@ -315,7 +304,7 @@
 
 ---
 # ========================================
-# Example 13: Disable Default Hooks (Manual Hook Management)
+# Example 13: Manual Hook Management
 # ========================================
 
 - name: Backup with Manual Hooks
@@ -327,9 +316,10 @@
       vars:
         restic_s3_bucket: "manual-hooks-backup"
 
-        # Don't deploy default hook templates
-        # User manually creates hooks in /etc/restic/hooks/
-        restic_deploy_default_hooks: false
+        # No hook configuration - user manually creates hooks on target hosts
+        # Create hooks in /etc/restic/hooks/ on each target:
+        #   /etc/restic/hooks/pre-backup-custom.sh
+        #   /etc/restic/hooks/post-backup-custom.sh
 
         restic_backup_sources:
           - name: "custom"

@@ -190,12 +190,11 @@ restic_hooks_dir: "/etc/restic/hooks"
 # HOOKS
 # ========================================
 
-# Deploy default hook templates
-restic_deploy_default_hooks: true
-
-# Custom hooks directory on control node (optional)
-# If set, hooks will be copied from this directory instead of using templates
+# Custom hooks directory on control node
+# Hooks must be created manually in this directory or on target hosts
 # Example: restic_custom_hooks_dir: "{{ playbook_dir }}/hooks"
+# Hook naming: pre-backup-<source-name>.sh, post-backup-<source-name>.sh
+# Or use per-source hook_pre_script and hook_post_script variables
 restic_custom_hooks_dir: ""
 
 # ========================================

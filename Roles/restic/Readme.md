@@ -105,39 +105,27 @@ Automatically handles stale locks:
 
 Uses Restic's **native hook system** (`RESTIC_PRE_SCRIPT`, `RESTIC_POST_SCRIPT`). Restic automatically calls these scripts before/after backup.
 
-### Option 1: Inline Configuration (Default Templates)
+**Hooks are optional** - if not present, backup runs without hooks.
 
-```yaml
-restic_backup_sources:
-  - name: "database"
-    path: "/var/lib/postgresql"
-    enabled: true
+### Example Hook Scripts
 
-    pre_backup_commands:
-      - "pg_dumpall > /var/backups/db.sql"
+See `hooks/pre-backup-example.sh` and `hooks/post-backup-example.sh` in the playbook directory for comprehensive examples with:
+- Database dumps
+- Service management
+- LVM snapshots
+- Docker containers
+- And more...
 
-    post_backup_commands:
-      - "rm -f /var/backups/db.sql"
+### Option 1: Global Hooks Directory
 
-    stop_services:
-      - postgresql
-
-    start_services:
-      - postgresql
-```
-
-Role generates hook scripts in `/etc/restic/hooks/` from templates.
-
-### Option 2: Custom Hook Scripts from Playbook
-
-Create custom hooks in your playbook directory:
+Create hooks in your playbook directory:
 
 ```bash
-playbook_dir/
+your-playbook/
   hooks/
-    pre-backup-database.sh
+    pre-backup-database.sh    # For source "database"
     post-backup-database.sh
-    pre-backup-files.sh
+    pre-backup-files.sh       # For source "files"
     post-backup-files.sh
 ```
 
@@ -147,24 +135,50 @@ Configure role to copy them:
 restic_custom_hooks_dir: "{{ playbook_dir }}/hooks"
 ```
 
-### Option 3: Manual Hook Management
+Role copies `pre-backup-<source>.sh` and `post-backup-<source>.sh` to target hosts.
 
-Disable automatic deployment and manually create hooks:
+### Option 2: Per-Source Hook Scripts
+
+Specify hook scripts per source:
 
 ```yaml
-restic_deploy_default_hooks: false
+restic_backup_sources:
+  - name: "database"
+    path: "/var/lib/postgresql"
+    enabled: true
+    hook_pre_script: "{{ playbook_dir }}/scripts/db-pre-backup.sh"
+    hook_post_script: "{{ playbook_dir }}/scripts/db-post-backup.sh"
+
+  - name: "files"
+    path: "/var/files"
+    enabled: true
+    hook_pre_script: "{{ playbook_dir }}/scripts/files-pre.sh"
+    # No post-hook for this source
 ```
 
-Then manually create hooks in `/etc/restic/hooks/`:
-- `pre-backup-<source>.sh`
-- `post-backup-<source>.sh`
+Allows different hook scripts per source with custom naming.
+
+### Option 3: Manual Hook Management
+
+Create hooks directly on target hosts:
+
+```bash
+# On target host
+mkdir -p /etc/restic/hooks
+vi /etc/restic/hooks/pre-backup-database.sh
+vi /etc/restic/hooks/post-backup-database.sh
+chmod +x /etc/restic/hooks/*.sh
+```
+
+No Ansible configuration needed - just create the hooks manually.
 
 ### Hook Script Requirements
 
 - **Pre-hook**: Exit code 0 = continue, non-zero = abort backup
 - **Post-hook**: Receives backup exit status as `$1`
-- **Executable**: Scripts must have execute permission
+- **Executable**: Scripts must have execute permission (`chmod +x`)
 - **Naming**: `pre-backup-<source-name>.sh`, `post-backup-<source-name>.sh`
+- **Location**: `/etc/restic/hooks/` (default, configurable via `restic_hooks_dir`)
 
 ## CheckMK Integration
 
