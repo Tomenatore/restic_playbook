@@ -1,0 +1,398 @@
+---
+# roles/restic/tasks/main.yml
+# Restic Backup Role - Main Tasks (Systemd-Based)
+
+# ========================================
+# INSTALLATION
+# ========================================
+
+- name: Enable EPEL repository (RHEL/Rocky/Alma)
+  ansible.builtin.dnf:
+    name: epel-release
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Install Restic (RHEL/Rocky/Alma)
+  ansible.builtin.dnf:
+    name: "{{ restic_package_name }}"
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Install Restic (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name: "{{ restic_package_name }}"
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Install additional packages
+  ansible.builtin.package:
+    name: "{{ restic_additional_packages }}"
+    state: present
+
+# ========================================
+# DIRECTORIES & CONFIGURATION
+# ========================================
+
+- name: Create Restic configuration directory
+  ansible.builtin.file:
+    path: "{{ restic_config_dir }}"
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+
+- name: Create Restic password directory
+  ansible.builtin.file:
+    path: "{{ restic_config_dir }}/passwords"
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+
+- name: Create Restic scripts directory
+  ansible.builtin.file:
+    path: "{{ restic_scripts_dir }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Create Restic lock directory
+  ansible.builtin.file:
+    path: "{{ restic_lock_dir }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Ensure Check_MK spool directory exists
+  ansible.builtin.file:
+    path: "{{ restic_checkmk_spool_dir }}"
+    state: directory
+    mode: '0755'
+  when: restic_enable_checkmk | bool
+
+# ========================================
+# ENCRYPTION KEYS (2-Key System)
+# ========================================
+
+- name: Deploy generic password file
+  ansible.builtin.copy:
+    dest: "{{ restic_config_dir }}/passwords/{{ restic_generic_password_file }}"
+    content: "{{ restic_generic_password }}"
+    mode: '0600'
+    owner: root
+    group: root
+  no_log: "{{ not restic_debug_mode }}"
+  when: restic_generic_password | length > 0
+
+- name: Deploy playbook-specific password file
+  ansible.builtin.copy:
+    dest: "{{ restic_config_dir }}/passwords/{{ restic_playbook_password_file }}"
+    content: "{{ restic_playbook_password }}"
+    mode: '0600'
+    owner: root
+    group: root
+  no_log: "{{ not restic_debug_mode }}"
+  when: restic_playbook_password | length > 0
+
+# ========================================
+# BACKEND CONFIGURATION
+# ========================================
+
+- name: Build S3 repository URL
+  ansible.builtin.set_fact:
+    restic_repository: "s3:{% if restic_s3_endpoint %}{{ restic_s3_endpoint }}{% else %}s3.{{ restic_s3_region }}.amazonaws.com{% endif %}/{{ restic_s3_bucket }}{% if restic_s3_prefix %}/{{ restic_s3_prefix }}{% endif %}"
+  when: restic_backend_type == "s3"
+  no_log: "{{ not restic_debug_mode }}"
+
+- name: Ensure local backup directory exists
+  ansible.builtin.file:
+    path: "{{ restic_local_path }}"
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+  when: restic_backend_type == "local"
+
+- name: Build local repository URL
+  ansible.builtin.set_fact:
+    restic_repository: "{{ restic_local_path }}"
+  when: restic_backend_type == "local"
+
+# ========================================
+# REPOSITORY INITIALIZATION
+# ========================================
+
+- name: Set environment for repository operations
+  ansible.builtin.set_fact:
+    restic_env:
+      RESTIC_REPOSITORY: "{{ restic_repository }}"
+      RESTIC_PASSWORD_FILE: "{{ restic_config_dir }}/passwords/{% if restic_use_playbook_key %}{{ restic_playbook_password_file }}{% else %}{{ restic_generic_password_file }}{% endif %}"
+      {% if restic_backend_type == "s3" %}
+      AWS_ACCESS_KEY_ID: "{{ restic_s3_access_key }}"
+      AWS_SECRET_ACCESS_KEY: "{{ restic_s3_secret_key }}"
+      AWS_DEFAULT_REGION: "{{ restic_s3_region }}"
+      {% endif %}
+  no_log: "{{ not restic_debug_mode }}"
+
+- name: Check if repository exists
+  ansible.builtin.shell:
+    cmd: restic snapshots
+  environment: "{{ restic_env }}"
+  register: restic_repo_check
+  failed_when: false
+  changed_when: false
+  no_log: "{{ not restic_debug_mode }}"
+
+- name: Initialize repository if not exists
+  ansible.builtin.command:
+    cmd: restic init
+  environment: "{{ restic_env }}"
+  when: restic_repo_check.rc != 0
+  register: restic_repo_init
+  failed_when:
+    - restic_repo_init.rc != 0
+    - "'already initialized' not in restic_repo_init.stderr"
+  changed_when: "'created restic repository' in restic_repo_init.stdout or 'created restic repository' in restic_repo_init.stderr"
+  no_log: "{{ not restic_debug_mode }}"
+
+- name: Confirm repository status
+  ansible.builtin.debug:
+    msg: "Repository {{ restic_repository }} is ready"
+  when: restic_repo_check.rc == 0 or (restic_repo_init is defined and restic_repo_init is changed)
+
+# ========================================
+# EXCLUSIONS
+# ========================================
+
+- name: Create exclude file
+  ansible.builtin.copy:
+    dest: "{{ restic_config_dir }}/excludes.txt"
+    mode: '0644'
+    content: "{{ restic_backup_excludes | join('\n') }}\n"
+
+# ========================================
+# DEPLOY SCRIPTS
+# ========================================
+
+- name: Deploy CheckMK status script
+  ansible.builtin.template:
+    src: scripts/checkmk-status.sh.j2
+    dest: "{{ restic_scripts_dir }}/checkmk-status.sh"
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Deploy backup scripts for each source
+  ansible.builtin.template:
+    src: scripts/backup.sh.j2
+    dest: "{{ restic_scripts_dir }}/backup-{{ item.name }}.sh"
+    mode: '0755'
+    owner: root
+    group: root
+  loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Deploy scan scripts for each source
+  ansible.builtin.template:
+    src: scripts/scan.sh.j2
+    dest: "{{ restic_scripts_dir }}/scan-{{ item.name }}.sh"
+    mode: '0755'
+    owner: root
+    group: root
+  loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# ========================================
+# DEPLOY HOOKS
+# ========================================
+
+- name: Deploy pre-backup hooks for each source
+  ansible.builtin.template:
+    src: hooks/pre-backup.sh.j2
+    dest: "{{ restic_scripts_dir }}/pre-backup-{{ item.name }}.sh"
+    mode: '0755'
+    owner: root
+    group: root
+  loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Deploy post-backup hooks for each source
+  ansible.builtin.template:
+    src: hooks/post-backup.sh.j2
+    dest: "{{ restic_scripts_dir }}/post-backup-{{ item.name }}.sh"
+    mode: '0755'
+    owner: root
+    group: root
+  loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# ========================================
+# DEPLOY SYSTEMD UNITS - BACKUP
+# ========================================
+
+- name: Deploy backup service units
+  ansible.builtin.template:
+    src: systemd/restic-backup@.service.j2
+    dest: /etc/systemd/system/restic-backup@.service
+    mode: '0644'
+    owner: root
+    group: root
+  notify: systemd daemon-reload
+  when: restic_enable_backup | bool
+
+- name: Deploy backup timer units
+  ansible.builtin.template:
+    src: systemd/restic-backup@.timer.j2
+    dest: /etc/systemd/system/restic-backup@.timer
+    mode: '0644'
+    owner: root
+    group: root
+  notify: systemd daemon-reload
+  when: restic_enable_backup | bool and restic_enable_timers | bool
+
+# ========================================
+# DEPLOY SYSTEMD UNITS - PRUNE
+# ========================================
+
+- name: Deploy prune service units
+  ansible.builtin.template:
+    src: systemd/restic-prune@.service.j2
+    dest: /etc/systemd/system/restic-prune@.service
+    mode: '0644'
+    owner: root
+    group: root
+  notify: systemd daemon-reload
+  when: restic_enable_prune | bool
+
+- name: Deploy prune timer units
+  ansible.builtin.template:
+    src: systemd/restic-prune@.timer.j2
+    dest: /etc/systemd/system/restic-prune@.timer
+    mode: '0644'
+    owner: root
+    group: root
+  notify: systemd daemon-reload
+  when: restic_enable_prune | bool and restic_enable_timers | bool
+
+# ========================================
+# DEPLOY SYSTEMD UNITS - CHECK
+# ========================================
+
+- name: Deploy check service units
+  ansible.builtin.template:
+    src: systemd/restic-check@.service.j2
+    dest: /etc/systemd/system/restic-check@.service
+    mode: '0644'
+    owner: root
+    group: root
+  notify: systemd daemon-reload
+  when: restic_enable_check | bool
+
+- name: Deploy check timer units
+  ansible.builtin.template:
+    src: systemd/restic-check@.timer.j2
+    dest: /etc/systemd/system/restic-check@.timer
+    mode: '0644'
+    owner: root
+    group: root
+  notify: systemd daemon-reload
+  when: restic_enable_check | bool and restic_enable_timers | bool
+
+# ========================================
+# DEPLOY SYSTEMD UNITS - SCAN
+# ========================================
+
+- name: Deploy scan service units
+  ansible.builtin.template:
+    src: systemd/restic-scan@.service.j2
+    dest: /etc/systemd/system/restic-scan@.service
+    mode: '0644'
+    owner: root
+    group: root
+  notify: systemd daemon-reload
+  when: restic_enable_scan | bool
+
+- name: Deploy scan timer units
+  ansible.builtin.template:
+    src: systemd/restic-scan@.timer.j2
+    dest: /etc/systemd/system/restic-scan@.timer
+    mode: '0644'
+    owner: root
+    group: root
+  notify: systemd daemon-reload
+  when: restic_enable_scan | bool and restic_enable_timers | bool
+
+# ========================================
+# ENABLE AND START TIMERS
+# ========================================
+
+- name: Flush handlers to reload systemd
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start backup timers
+  ansible.builtin.systemd:
+    name: "restic-backup@{{ item.name }}.timer"
+    enabled: yes
+    state: started
+    daemon_reload: yes
+  loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: restic_enable_backup | bool and restic_enable_timers | bool
+
+- name: Enable and start prune timer for first source
+  ansible.builtin.systemd:
+    name: "restic-prune@{{ (restic_backup_sources | selectattr('enabled') | list | first).name }}.timer"
+    enabled: yes
+    state: started
+    daemon_reload: yes
+  when:
+    - restic_enable_prune | bool
+    - restic_enable_timers | bool
+    - (restic_backup_sources | selectattr('enabled') | list | length) > 0
+
+- name: Enable and start check timer for first source
+  ansible.builtin.systemd:
+    name: "restic-check@{{ (restic_backup_sources | selectattr('enabled') | list | first).name }}.timer"
+    enabled: yes
+    state: started
+    daemon_reload: yes
+  when:
+    - restic_enable_check | bool
+    - restic_enable_timers | bool
+    - (restic_backup_sources | selectattr('enabled') | list | length) > 0
+
+- name: Enable and start scan timer for first source
+  ansible.builtin.systemd:
+    name: "restic-scan@{{ (restic_backup_sources | selectattr('enabled') | list | first).name }}.timer"
+    enabled: yes
+    state: started
+    daemon_reload: yes
+  when:
+    - restic_enable_scan | bool
+    - restic_enable_timers | bool
+    - (restic_backup_sources | selectattr('enabled') | list | length) > 0
+
+# ========================================
+# SUMMARY
+# ========================================
+
+- name: Display deployment summary
+  ansible.builtin.debug:
+    msg:
+      - "=== Restic Systemd Deployment Complete ==="
+      - "Repository: {{ restic_repository }}"
+      - "Backend: {{ restic_backend_type | upper }}"
+      - "Backup sources: {{ restic_backup_sources | selectattr('enabled') | list | length }}"
+      - "Enabled jobs: backup={{ restic_enable_backup }}, prune={{ restic_enable_prune }}, check={{ restic_enable_check }}, scan={{ restic_enable_scan }}"
+      - "Timers enabled: {{ restic_enable_timers }}"
+      - ""
+      - "Check timer status with: systemctl list-timers 'restic-*'"
+      - "View logs with: journalctl -u 'restic-*' -f"

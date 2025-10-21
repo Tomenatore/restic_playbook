@@ -1,59 +1,75 @@
 ---
 # group_vars/all/vars.yml
-# Example Configuration for Restic Backup Role
+# Example Configuration for Restic Backup Role (Systemd-Based)
 
 # ========================================
-# BACKUP TARGET
+# BACKEND CONFIGURATION
 # ========================================
 
-backup_target_type: "s3"
+restic_backend_type: "s3"  # s3, local, sftp
 
-# ========================================
-# S3 CONFIGURATION
-# ========================================
-
-s3_bucket: "my-company-backups"
-s3_region: "eu-central-1"
-s3_endpoint: ""  # Empty for AWS, or "https://minio.example.com" for MinIO
-s3_prefix: "restic"
+# S3 Backend
+restic_s3_bucket: "my-company-backups"
+restic_s3_region: "eu-central-1"
+restic_s3_endpoint: ""  # Empty for AWS, or "https://minio.example.com" for MinIO
+restic_s3_prefix: "restic"
 
 # Credentials from vault
-s3_access_key: "{{ vault_aws_access_key }}"
-s3_secret_key: "{{ vault_aws_secret_key }}"
+restic_s3_access_key: "{{ vault_aws_access_key }}"
+restic_s3_secret_key: "{{ vault_aws_secret_key }}"
+
+# Local Backend (Alternative)
+# restic_backend_type: "local"
+# restic_local_path: "/mnt/backup/restic"
 
 # ========================================
-# LOCAL CONFIGURATION (Alternative)
+# ENCRYPTION KEYS (2-Key System)
 # ========================================
 
-# backup_target_type: "local"
-# local_backup_path: "/mnt/backup/restic"
+# Generic key - used as fallback or for shared repositories
+restic_generic_password: "{{ vault_restic_generic_password }}"
+
+# Playbook-specific key - used for this specific playbook/environment
+restic_playbook_password: "{{ vault_restic_playbook_password }}"
+
+# Use playbook-specific key by default
+restic_use_playbook_key: true
 
 # ========================================
 # BACKUP SOURCES
 # ========================================
 
-backup_sources:
-  - path: "/var/www"
+restic_backup_sources:
+  - name: "var-www"
+    path: "/var/www"
     tags: ["web", "production"]
     enabled: true
-  
-  - path: "/etc"
+
+  - name: "etc"
+    path: "/etc"
     tags: ["config", "system"]
     enabled: true
-  
-  - path: "/var/backups"
+
+  - name: "var-backups"
+    path: "/var/backups"
     tags: ["dumps", "database"]
     enabled: true
-  
-  - path: "/home"
-    tags: ["userdata"]
-    enabled: false
+    # Example: Database backup with hooks
+    # pre_backup_commands:
+    #   - "mysqldump --all-databases > /var/backups/mysql-all.sql"
+    # post_backup_commands:
+    #   - "rm -f /var/backups/mysql-all.sql"
+
+  # - name: "home"
+  #   path: "/home"
+  #   tags: ["userdata"]
+  #   enabled: false
 
 # ========================================
-# EXCLUDES
+# EXCLUSIONS
 # ========================================
 
-backup_excludes:
+restic_backup_excludes:
   - "*.tmp"
   - "*.cache"
   - "*.log"
@@ -67,62 +83,53 @@ backup_excludes:
   - "__pycache__"
 
 # ========================================
-# BACKUP SCHEDULE
+# BACKUP BEHAVIOR
 # ========================================
 
-backup_interval_hours: 24
+restic_force_rescan: false
+restic_force_rescan_day: 0  # 0=disabled, 1-31=day of month
 
-backup_time_window:
-  enabled: false
-  start_hour: 2
-  end_hour: 5
+# ========================================
+# SYSTEMD TIMER CONFIGURATION
+# ========================================
 
-backup_force_rescan: false
-backup_force_rescan_day: 0
+# Backup timer (runs daily at 2am +/- 30min randomization)
+restic_timer_on_calendar: "02:00"
+restic_timer_randomized_delay: "30min"
+
+# Prune timer (runs weekly)
+restic_prune_timer_on_calendar: "weekly"
+
+# Check timer (runs weekly)
+restic_check_timer_on_calendar: "weekly"
+
+# Scan timer (runs daily)
+restic_scan_timer_on_calendar: "daily"
 
 # ========================================
 # RETENTION POLICY
 # ========================================
 
-retention_policy:
-  keep_last: 7
-  keep_hourly: 24
-  keep_daily: 14
-  keep_weekly: 8
-  keep_monthly: 12
-  keep_yearly: 5
+restic_retention_keep_last: 7
+restic_retention_keep_hourly: 24
+restic_retention_keep_daily: 14
+restic_retention_keep_weekly: 8
+restic_retention_keep_monthly: 12
+restic_retention_keep_yearly: 5
 
 # ========================================
-# SECURITY
+# LOCK FILE MANAGEMENT
 # ========================================
 
-restic_password: "{{ vault_restic_password }}"
-
-# ========================================
-# PRE/POST BACKUP TASKS
-# ========================================
-
-pre_backup_tasks_file: "{{ playbook_dir }}/tasks/pre_backup_tasks.yml"
-post_backup_tasks_file: "{{ playbook_dir }}/tasks/post_backup_tasks.yml"
+# Maximum age of lock file in hours before it's considered stale
+restic_lock_max_age_hours: 12
 
 # ========================================
 # MONITORING
 # ========================================
 
-enable_checkmk: true
-checkmk_service_name: "Restic_Backup"
-checkmk_check_service_name: "Restic_Repository_Check"
-
-enable_syslog: true
-syslog_facility: "local0"
-syslog_tag: "restic-backup"
-
-# ========================================
-# REPOSITORY CHECKS
-# ========================================
-
-enable_repository_check: true
-check_interval_days: 7
+restic_enable_checkmk: true
+restic_enable_syslog: true
 
 # ========================================
 # PERFORMANCE TUNING
@@ -132,15 +139,13 @@ restic_read_concurrency: 2
 restic_upload_limit_kbps: 0      # 0 = unlimited, 1024 = 1 MiB/s
 restic_download_limit_kbps: 0    # 0 = unlimited
 
-# ========================================
-# LOGGING
-# ========================================
-
-log_directory: "/var/log/restic"
-log_retention_days: 30
+# CPU and I/O limits for systemd units
+restic_cpu_quota: 80
+restic_io_weight: 100
+restic_nice_level: 10
 
 # ========================================
 # DEBUG MODE
 # ========================================
 
-debug_mode: false  # WARNING: Only for testing!
+restic_debug_mode: false  # WARNING: Only for testing!

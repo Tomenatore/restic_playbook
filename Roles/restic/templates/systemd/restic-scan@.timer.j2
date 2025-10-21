@@ -1,0 +1,18 @@
+[Unit]
+Description=Timer for Restic Snapshot Scan %i
+Documentation=https://restic.readthedocs.io/
+
+[Timer]
+{% if restic_scan_timer_on_calendar %}
+OnCalendar={{ restic_scan_timer_on_calendar }}
+{% else %}
+OnBootSec={{ restic_scan_timer_on_boot_sec }}
+OnUnitActiveSec={{ restic_scan_timer_interval }}
+{% endif %}
+
+Persistent={{ restic_timer_persistent | lower }}
+RandomizedDelaySec={{ restic_timer_randomized_delay }}
+AccuracySec={{ restic_timer_accuracy }}
+
+[Install]
+WantedBy=timers.target

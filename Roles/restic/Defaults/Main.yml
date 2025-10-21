@@ -1,0 +1,232 @@
+---
+# roles/restic/defaults/main.yml
+# Default variables for restic role
+# All variables are prefixed with 'restic_' for namespace isolation
+
+# ========================================
+# ENCRYPTION KEYS (2-Key System)
+# ========================================
+
+# Generic key - used as fallback or for shared repositories
+restic_generic_password: "{{ vault_restic_generic_password | default('') }}"
+
+# Playbook-specific key - used for this specific playbook/environment
+restic_playbook_password: "{{ vault_restic_playbook_password | default('') }}"
+
+# Which password file to use (generic or playbook-specific)
+restic_playbook_password_file: "playbook.key"
+restic_generic_password_file: "generic.key"
+
+# Use playbook-specific key by default
+restic_use_playbook_key: true
+
+# ========================================
+# BACKEND CONFIGURATION
+# ========================================
+
+restic_backend_type: "s3"  # s3, local, sftp, rest
+
+# S3 Backend
+restic_s3_bucket: "my-backup-bucket"
+restic_s3_region: "eu-central-1"
+restic_s3_access_key: "{{ vault_aws_access_key | default('') }}"
+restic_s3_secret_key: "{{ vault_aws_secret_key | default('') }}"
+restic_s3_endpoint: ""  # Empty for AWS, or custom endpoint (MinIO, Wasabi, etc.)
+restic_s3_prefix: "restic"  # Optional path prefix in bucket
+
+# Local Backend
+restic_local_path: "/mnt/backup/restic-repo"
+
+# SFTP Backend
+restic_sftp_host: ""
+restic_sftp_user: ""
+restic_sftp_path: ""
+
+# Repository URL (will be constructed automatically)
+restic_repository: ""
+
+# ========================================
+# BACKUP SOURCES
+# ========================================
+
+restic_backup_sources:
+  - name: "var-www"
+    path: "/var/www"
+    tags: ["web", "production"]
+    enabled: true
+    # Optional: Pre-backup commands
+    pre_backup_commands: []
+    # Optional: Post-backup commands
+    post_backup_commands: []
+    # Optional: Services to stop before backup
+    stop_services: []
+    # Optional: Services to start after backup
+    start_services: []
+    # Optional: Database dump configuration
+    # database_dump:
+    #   enabled: true
+    #   type: "mysql"  # mysql or postgresql
+    #   options: "--all-databases --single-transaction"
+
+  - name: "etc"
+    path: "/etc"
+    tags: ["config", "system"]
+    enabled: true
+
+  # - name: "home"
+  #   path: "/home"
+  #   tags: ["userdata"]
+  #   enabled: false
+
+# ========================================
+# EXCLUSIONS
+# ========================================
+
+restic_backup_excludes:
+  - "*.tmp"
+  - "*.cache"
+  - "*.log"
+  - "*/cache/*"
+  - "*/tmp/*"
+  - "*/node_modules/*"
+  - "*/vendor/*"
+  - "*/.git/*"
+  - "*/lost+found/*"
+  - "*.pyc"
+  - "__pycache__"
+  - "*.swp"
+  - "*.swo"
+  - "*~"
+
+# ========================================
+# BACKUP BEHAVIOR
+# ========================================
+
+# Force re-scan of all files (ignores change detection)
+restic_force_rescan: false
+
+# Optional: Force rescan on specific day of month (1-31, 0=disabled)
+restic_force_rescan_day: 0
+
+# ========================================
+# SYSTEMD TIMER CONFIGURATION
+# ========================================
+
+# Backup timer settings
+restic_timer_on_calendar: "daily"  # or use cron-like syntax: "Mon,Wed,Fri *-*-* 02:00:00"
+restic_timer_on_boot_sec: "15min"
+restic_timer_interval: "24h"
+restic_timer_persistent: true
+restic_timer_randomized_delay: "30min"
+restic_timer_accuracy: "1h"
+
+# Prune timer settings
+restic_prune_timer_on_calendar: "weekly"
+restic_prune_timer_on_boot_sec: "30min"
+restic_prune_timer_interval: "7d"
+
+# Check timer settings
+restic_check_timer_on_calendar: "weekly"
+restic_check_timer_on_boot_sec: "1h"
+restic_check_timer_interval: "7d"
+restic_check_read_data: false  # Set to true for full data integrity check (slower)
+
+# Scan timer settings
+restic_scan_timer_on_calendar: "daily"
+restic_scan_timer_on_boot_sec: "1h"
+restic_scan_timer_interval: "1d"
+
+# ========================================
+# PERFORMANCE & LIMITS
+# ========================================
+
+# Read concurrency (parallel file reading)
+restic_read_concurrency: 2
+
+# Upload/Download limits in KiB/s (0 = unlimited)
+restic_upload_limit_kbps: 0
+restic_download_limit_kbps: 0
+
+# CPU and I/O limits for systemd units
+restic_cpu_quota: 80  # Percentage (100 = 1 core)
+restic_io_weight: 100  # 1-10000, default 100
+restic_nice_level: 10  # -20 to 19, higher = lower priority
+
+# ========================================
+# RETENTION POLICY
+# ========================================
+
+restic_retention_keep_last: 7
+restic_retention_keep_hourly: 24
+restic_retention_keep_daily: 14
+restic_retention_keep_weekly: 8
+restic_retention_keep_monthly: 12
+restic_retention_keep_yearly: 5
+
+# ========================================
+# LOCK FILE MANAGEMENT
+# ========================================
+
+# Maximum age of lock file in hours before it's considered stale
+restic_lock_max_age_hours: 12
+
+# Lock directory
+restic_lock_dir: "/var/run/restic"
+
+# ========================================
+# DIRECTORIES
+# ========================================
+
+# Configuration directory
+restic_config_dir: "/etc/restic"
+
+# Scripts directory
+restic_scripts_dir: "/usr/local/bin/restic"
+
+# ========================================
+# MONITORING
+# ========================================
+
+# Syslog
+restic_enable_syslog: true
+restic_syslog_facility: "local0"
+restic_syslog_tag: "restic"
+
+# CheckMK monitoring
+restic_enable_checkmk: true
+restic_checkmk_spool_dir: "/var/lib/check_mk_agent/spool"
+restic_checkmk_service_prefix: "Restic"
+
+# ========================================
+# SYSTEMD UNITS
+# ========================================
+
+# Enable/disable specific job types
+restic_enable_backup: true
+restic_enable_prune: true
+restic_enable_check: true
+restic_enable_scan: true
+
+# Enable/disable timers (vs manual execution)
+restic_enable_timers: true
+
+# ========================================
+# INSTALLATION
+# ========================================
+
+# Restic package name
+restic_package_name: "restic"
+
+# Additional packages
+restic_additional_packages:
+  - "jq"  # Required for JSON parsing in scripts
+  - "bc"  # Required for calculations
+
+# ========================================
+# DEBUG MODE
+# ========================================
+
+# WARNING: ONLY enable for testing/debugging!
+# When enabled, sensitive data (passwords, keys) may be visible in logs!
+# NEVER use in production!
+restic_debug_mode: false
