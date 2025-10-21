@@ -4,24 +4,15 @@
 # All variables are prefixed with 'restic_' for namespace isolation
 
 # ========================================
-# ENCRYPTION KEYS (2-Key System)
+# ENCRYPTION
 # ========================================
 
-# Generic key - used as fallback or for shared repositories
-restic_generic_password: "{{ vault_restic_generic_password | default('') }}"
+# Repository password - CRITICAL: Without this, backups are LOST!
+# Store in vault (group_vars/all/vault.yml encrypted with ansible-vault)
+restic_password: "{{ vault_restic_password | default('') }}"
 
-# Playbook-specific key - used for this specific playbook/environment
-restic_playbook_password: "{{ vault_restic_playbook_password | default('') }}"
-
-# Which password file to use (generic or playbook-specific)
-restic_playbook_password_file: "playbook.key"
-restic_generic_password_file: "generic.key"
-
-# Use playbook-specific key by default
-restic_use_playbook_key: true
-
-# Active password file (automatically selects based on restic_use_playbook_key)
-restic_active_password_file: "{{ restic_playbook_password_file if restic_use_playbook_key else restic_generic_password_file }}"
+# Password file location on target system
+restic_password_file: "repository.key"
 
 # ========================================
 # BACKEND CONFIGURATION

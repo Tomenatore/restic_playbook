@@ -10,13 +10,13 @@ This playbook deploys a complete Restic backup solution that runs independently 
 
 - **Systemd Integration**: Backups run via systemd timers (decoupled from Ansible)
 - **Instance-Based Units**: Per-source systemd services using `@` instances
-- **2-Key Encryption**: Generic + playbook-specific encryption keys
-- **Native Restic Locks**: Automatic stale lock cleanup (>30 min)
+- **Intelligent Lock Management**: Automatic stale lock cleanup with retry logic
 - **Restic Hooks**: Pre/post-backup shell scripts using Restic's native hook system
 - **CheckMK Monitoring**: Per-unit status reporting
 - **Multiple Job Types**: backup, prune, check, scan operations
 - **Resource Control**: CPU, I/O, and Nice level limits per service
 - **Flexible Configuration**: Per-source timeouts, retry-lock, and hooks
+- **S3-Compatible**: Works with AWS S3, MinIO, Wasabi, Backblaze B2, and others
 
 ## Quick Start
 
@@ -36,10 +36,9 @@ ansible-vault create Group_vars/All/Vault.yml
 Add:
 ```yaml
 ---
-vault_aws_access_key: "YOUR_AWS_ACCESS_KEY"
-vault_aws_secret_key: "YOUR_AWS_SECRET_KEY"
-vault_restic_generic_password: "YOUR_GENERIC_PASSWORD"
-vault_restic_playbook_password: "YOUR_PLAYBOOK_PASSWORD"
+vault_s3_access_key: "YOUR_S3_ACCESS_KEY"
+vault_s3_secret_key: "YOUR_S3_SECRET_KEY"
+vault_restic_password: "YOUR_REPOSITORY_PASSWORD"
 ```
 
 ### 3. Configure Backup Sources
@@ -96,8 +95,7 @@ journalctl -u 'restic-backup@*' -f
 ```
 /etc/restic/
 ├── passwords/
-│   ├── generic.key
-│   └── playbook.key
+│   └── repository.key
 ├── hooks/
 │   ├── pre-backup-<source>.sh
 │   └── post-backup-<source>.sh
@@ -198,7 +196,7 @@ journalctl -u restic-backup@var-www.service -n 100
 ## Documentation
 
 - **Role Documentation**: `Roles/restic/Readme.md` - Complete role documentation
-- **Example Playbook**: `Playbook_examples.yml` - 15 usage examples
+- **Example Playbook**: `Playbook_examples.yml` - 19 usage examples
 - **Example Hooks**: `hooks/` - Pre/post backup hook examples
 - **Inventory**: `Inventory/hosts.ini.example` - Inventory example
 
@@ -252,9 +250,9 @@ restic_playbook/
 
 - All passwords encrypted with ansible-vault
 - Restic repositories encrypted with strong keys
-- 2-key system for multi-environment deployments
 - No credentials in logs (no_log enabled)
 - Systemd service hardening (PrivateTmp, ProtectSystem)
+- Repository password file with restrictive permissions (600)
 
 ## License
 

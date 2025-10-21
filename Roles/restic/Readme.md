@@ -6,13 +6,13 @@ Production-ready Ansible role for deploying Restic backups using systemd units a
 
 - **Systemd Integration**: Backups run via systemd timers, not Ansible
 - **Instance-Based Units**: Uses systemd instances (`@`) for per-source configuration
-- **2-Key Encryption**: Generic + playbook-specific encryption keys
-- **Stale Lock Management**: Auto-detection and cleanup of stale locks
+- **Intelligent Lock Management**: Auto-detection and cleanup of stale locks with retry logic
 - **CheckMK Monitoring**: Per-unit monitoring with custom tags
 - **Restic Hooks**: Pre/post-backup tasks as shell scripts
 - **Multiple Job Types**: backup, prune, check, scan
 - **Syslog Logging**: Centralized logging via syslog
 - **Resource Control**: CPU, I/O, and Nice level limits
+- **S3-Compatible**: Works with AWS S3, MinIO, Wasabi, Backblaze B2, and others
 
 ## Requirements
 
@@ -21,42 +21,6 @@ Production-ready Ansible role for deploying Restic backups using systemd units a
 - Restic (installed by role)
 - CheckMK agent (optional)
 
-## Quick Start
-
-### 1. Configure Variables
-
-**group_vars/all/vars.yml:**
-```yaml
-restic_backend_type: "s3"
-restic_s3_bucket: "my-backups"
-restic_s3_region: "eu-central-1"
-restic_s3_access_key: "{{ vault_s3_access_key }}"
-restic_s3_secret_key: "{{ vault_s3_secret_key }}"
-
-restic_playbook_password: "{{ vault_restic_playbook_password }}"
-restic_generic_password: "{{ vault_restic_generic_password }}"
-
-restic_backup_sources:
-  - name: "var-www"
-    path: "/var/www"
-    tags: ["web"]
-    enabled: true
-
-restic_timer_on_calendar: "02:00"  # Daily at 2am
-```
-
-### 2. Deploy
-
-```bash
-ansible-playbook playbook.yml --ask-vault-pass
-```
-
-### 3. Verify
-
-```bash
-systemctl list-timers 'restic-*'
-journalctl -u 'restic-backup@*' -f
-```
 
 ## Architecture
 
@@ -72,25 +36,17 @@ journalctl -u 'restic-backup@*' -f
 ```
 /etc/restic/
 ├── passwords/
-│   ├── generic.key
-│   └── playbook.key
+│   └── repository.key          # Repository encryption password
 ├── hooks/
-│   ├── pre-backup-<source>.sh
-│   └── post-backup-<source>.sh
-└── excludes.txt
+│   ├── pre-backup-<source>.sh  # Optional: Pre-backup hooks
+│   └── post-backup-<source>.sh # Optional: Post-backup hooks
+└── excludes.txt                # Backup exclusion patterns
 
 /usr/local/bin/restic/
-├── backup-<source>.sh
-├── scan-<source>.sh
-└── checkmk-status.sh
+├── backup-<source>.sh          # Backup script per source
+├── scan-<source>.sh            # Statistics collection script
+└── checkmk-status.sh           # CheckMK integration script
 ```
-
-## 2-Key Encryption
-
-- **Generic Key**: Shared across multiple environments
-- **Playbook Key**: Environment-specific (default)
-
-Use `restic_use_playbook_key: false` to switch to generic key.
 
 ## Lock Management
 
@@ -608,38 +564,426 @@ restic_backup_sources:
 | `restic_nice_level` | `10` | Nice level |
 | `restic_upload_limit_kbps` | `0` | Upload limit (0=unlimited) |
 
-## Troubleshooting
+## Monitoring & Debugging
 
-### Check Timers
+### Check Backup Status
 
+**View all timers and next run times:**
 ```bash
 systemctl list-timers 'restic-*'
 ```
 
+**Check service status:**
+```bash
+# Specific source
+systemctl status restic-backup@var-www.service
+systemctl status restic-backup@var-www.timer
+
+# All backup services
+systemctl status 'restic-backup@*'
+
+# Check if service failed
+systemctl is-failed restic-backup@var-www.service
+
+# See why service failed (exit code, etc.)
+systemctl show restic-backup@var-www.service | grep -E 'Result|ExecMainStatus|ActiveState'
+```
+
+**Check retry status (after failures):**
+```bash
+# See restart count
+systemctl show restic-backup@var-www.service | grep NRestarts
+
+# See when next retry is scheduled
+systemctl list-timers restic-backup@var-www.timer
+
+# Check service uptime/downtime
+systemctl show restic-backup@var-www.service | grep -E 'ActiveEnter|InactiveEnter'
+```
+
 ### View Logs
 
+**System journal logs:**
 ```bash
+# Follow logs in real-time for specific source
+journalctl -u restic-backup@var-www.service -f
+
+# Last 100 lines
 journalctl -u restic-backup@var-www.service -n 100
+
+# All restic services today
 journalctl -u 'restic-*' --since today
+
+# Only errors
+journalctl -u 'restic-*' -p err --since today
+
+# Specific time range
+journalctl -u restic-backup@var-www.service --since "2024-01-15 02:00" --until "2024-01-15 03:00"
+
+# Follow all restic operations
+journalctl -u 'restic-backup@*' -u 'restic-prune@*' -u 'restic-check@*' -f
 ```
 
-### Manual Test
-
+**Syslog (if configured):**
 ```bash
+# Grep syslog for restic entries
+grep restic /var/log/syslog | tail -n 100
+
+# Filter by operation
+grep "restic-backup" /var/log/syslog
+grep "restic-prune" /var/log/syslog
+
+# Filter by source
+grep "restic.*var-www" /var/log/syslog
+```
+
+**CheckMK spool files:**
+```bash
+# View all CheckMK status files
+ls -lh /var/lib/check_mk_agent/spool/
+
+# View specific backup status
+cat /var/lib/check_mk_agent/spool/*_Restic_backup_var-www
+
+# Check all restic services
+cat /var/lib/check_mk_agent/spool/*_Restic_*
+```
+
+### Manual Operations
+
+**Trigger backup manually:**
+```bash
+# Start backup immediately (bypasses timer)
 systemctl start restic-backup@var-www.service
+
+# Watch status in real-time
+watch systemctl status restic-backup@var-www.service
+
+# Or follow logs
+journalctl -u restic-backup@var-www.service -f
+```
+
+**Stop running backup:**
+```bash
+systemctl stop restic-backup@var-www.service
+```
+
+**Restart services (reload configuration):**
+```bash
+# Reload systemd after config changes
+systemctl daemon-reload
+
+# Restart timer to apply changes
+systemctl restart restic-backup@var-www.timer
+```
+
+### Repository Access
+
+**Set up environment for manual restic commands:**
+```bash
+# Export environment variables
+export RESTIC_REPOSITORY="s3:s3.eu-central-1.amazonaws.com/my-bucket/restic"
+export RESTIC_PASSWORD_FILE="/etc/restic/passwords/repository.key"
+export AWS_ACCESS_KEY_ID="your-access-key"
+export AWS_SECRET_ACCESS_KEY="your-secret-key"
+export AWS_DEFAULT_REGION="eu-central-1"
+
+# Or source from systemd environment
+source <(systemctl show restic-backup@var-www.service -p Environment | sed 's/^Environment=//' | tr ' ' '\n' | sed 's/^/export /')
+```
+
+**Check repository status:**
+```bash
+# List all snapshots
+restic snapshots
+
+# List snapshots for specific source
+restic snapshots --tag var-www
+
+# Show latest snapshot
+restic snapshots --last
+
+# Check repository integrity
+restic check
+
+# Check repository statistics
+restic stats
+restic stats --mode restore-size  # Size after restore
+restic stats --mode raw-data       # Actual storage used
+```
+
+**List repository locks:**
+```bash
+# View active locks
+restic list locks
+
+# Remove stale locks (>30 minutes)
+restic unlock
+```
+
+**View backup contents:**
+```bash
+# List files in latest snapshot
+restic ls latest
+
+# List files in specific snapshot
+restic snapshots  # Get snapshot ID
+restic ls abc123def
+
+# Find specific file across all snapshots
+restic find "*.conf"
+restic find "/etc/nginx/nginx.conf"
+
+# Show differences between snapshots
+restic diff snapshot1 snapshot2
+```
+
+## Restore Operations
+
+### List Available Snapshots
+
+```bash
+# Setup environment (see "Repository Access" above)
+export RESTIC_REPOSITORY="s3:..."
+export RESTIC_PASSWORD_FILE="/etc/restic/passwords/repository.key"
+export AWS_ACCESS_KEY_ID="..."
+export AWS_SECRET_ACCESS_KEY="..."
+
+# List all snapshots
+restic snapshots
+
+# List snapshots for specific source
+restic snapshots --tag var-www
+
+# Show snapshot details
+restic snapshots --json | jq '.'
+
+# Find when a specific file was last backed up
+restic find "/var/www/index.html"
+```
+
+### Restore Files
+
+**Restore entire snapshot:**
+```bash
+# Restore latest snapshot to original location
+restic restore latest --target /
+
+# Restore latest snapshot to temporary location
+restic restore latest --target /tmp/restore
+
+# Restore specific snapshot
+restic snapshots  # Get snapshot ID
+restic restore abc123def --target /tmp/restore
+```
+
+**Restore specific files/directories:**
+```bash
+# Restore single file from latest snapshot
+restic restore latest --target /tmp/restore --include /etc/nginx/nginx.conf
+
+# Restore entire directory
+restic restore latest --target /tmp/restore --include /var/www/mysite
+
+# Restore with wildcard
+restic restore latest --target /tmp/restore --include "*.conf"
+
+# Restore excluding certain paths
+restic restore latest --target /tmp/restore --exclude /var/www/cache
+```
+
+**Restore from specific point in time:**
+```bash
+# Find snapshot from specific date
+restic snapshots --tag var-www
+
+# Or use time-based filter
+restic snapshots --tag var-www --json | jq '.[] | select(.time | startswith("2024-01-15"))'
+
+# Restore that snapshot
+restic restore <snapshot-id> --target /tmp/restore
+```
+
+### Advanced Restore Examples
+
+**Restore with verification:**
+```bash
+# Restore and verify
+restic restore latest --target /tmp/restore --verify
+
+# Compare with current filesystem
+diff -r /var/www /tmp/restore/var/www
+```
+
+**Restore to different server:**
+```bash
+# On source server: Get snapshot info
+restic snapshots --tag database
+
+# On target server: Restore using same repository
+export RESTIC_REPOSITORY="s3:..."
+export RESTIC_PASSWORD_FILE="<path-to-password-file>"
+restic restore <snapshot-id> --target /var/lib/mysql
+```
+
+**Mount snapshot as filesystem (read-only):**
+```bash
+# Create mount point
+mkdir /mnt/restic-mount
+
+# Mount repository
+restic mount /mnt/restic-mount
+
+# Browse backups
+ls /mnt/restic-mount/snapshots/
+cd /mnt/restic-mount/snapshots/latest/var/www
+
+# Copy files as needed
+cp -a /mnt/restic-mount/snapshots/latest/etc/nginx/nginx.conf /tmp/
+
+# Unmount when done
+fusermount -u /mnt/restic-mount
+```
+
+### Disaster Recovery
+
+**Complete system restore:**
+```bash
+# 1. Boot from live USB/rescue system
+# 2. Mount target filesystem
+mount /dev/sda1 /mnt
+
+# 3. Install restic
+apt-get install restic  # or download binary
+
+# 4. Set environment
+export RESTIC_REPOSITORY="s3:..."
+export RESTIC_PASSWORD_FILE="<path-to-password>"
+export AWS_ACCESS_KEY_ID="..."
+export AWS_SECRET_ACCESS_KEY="..."
+
+# 5. List available snapshots
+restic snapshots
+
+# 6. Restore system
+restic restore latest --target /mnt
+
+# 7. Restore bootloader (if needed)
+# 8. Reboot
+```
+
+**Emergency password recovery:**
+```bash
+# If password file is lost but you know the password:
+echo "your-repository-password" > /tmp/temp-password.key
+export RESTIC_PASSWORD_FILE="/tmp/temp-password.key"
+
+# Test access
+restic snapshots
+
+# If successful, redeploy with ansible
+ansible-playbook playbook.yml --ask-vault-pass
+```
+
+### Restore Troubleshooting
+
+**Problem: "wrong password or no key found"**
+```bash
+# Verify password file exists and is readable
+ls -l /etc/restic/passwords/repository.key
+cat /etc/restic/passwords/repository.key  # WARNING: Shows password!
+
+# Try with password directly (testing)
+restic -r s3:bucket/path snapshots --password-file <(echo "your-password")
+
+# Check repository exists
+aws s3 ls s3://your-bucket/restic/  # For S3
+```
+
+**Problem: "repository does not exist"**
+```bash
+# Verify repository URL
+echo $RESTIC_REPOSITORY
+
+# Check S3 access
+aws s3 ls s3://your-bucket/restic/config
+
+# Verify credentials
+aws sts get-caller-identity
+```
+
+**Problem: "restore is slow"**
+```bash
+# Use parallel downloads
+restic restore latest --target /tmp/restore --parallel 8
+
+# Limit bandwidth if needed
+restic restore latest --target /tmp/restore --limit-download 10240  # 10 MB/s
+
+# Resume interrupted restore
+restic restore latest --target /tmp/restore  # Automatically resumes
+```
+
+## Troubleshooting
+
+### Lock Issues
+
+See comprehensive lock troubleshooting in **Lock Management** section above.
+
+### Service Won't Start
+
+**Check for errors:**
+```bash
 systemctl status restic-backup@var-www.service
+journalctl -u restic-backup@var-www.service -n 50 --no-pager
 ```
 
-### Check Locks
-
+**Common issues:**
 ```bash
-ls -lah /var/run/restic/
+# Missing password file
+ls -l /etc/restic/passwords/repository.key
+
+# Wrong permissions
+chmod 600 /etc/restic/passwords/repository.key
+
+# Systemd syntax error
+systemctl daemon-reload
+systemctl status restic-backup@var-www.service
+
+# Missing environment variables
+systemctl show restic-backup@var-www.service -p Environment
 ```
 
-### CheckMK Status
+### Timer Not Triggering
 
 ```bash
-cat /var/lib/check_mk_agent/spool/*_Restic_backup_*
+# Check timer is enabled
+systemctl is-enabled restic-backup@var-www.timer
+
+# Enable if needed
+systemctl enable restic-backup@var-www.timer
+systemctl start restic-backup@var-www.timer
+
+# Check timer configuration
+systemctl cat restic-backup@var-www.timer
+
+# See when next trigger is scheduled
+systemctl list-timers restic-backup@var-www.timer
+```
+
+### High Resource Usage
+
+```bash
+# Check current resource usage
+systemctl status restic-backup@var-www.service
+
+# Adjust limits in group_vars/all/vars.yml:
+restic_cpu_quota: 50          # Lower CPU usage
+restic_upload_limit_kbps: 5120  # Limit to 5 MB/s
+restic_nice_level: 19         # Lowest priority
+
+# Apply changes
+ansible-playbook playbook.yml --ask-vault-pass
 ```
 
 ### Direct Restic Access

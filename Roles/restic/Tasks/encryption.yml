@@ -1,23 +1,13 @@
 ---
 # roles/restic/tasks/encryption.yml
-# Deploy encryption keys (2-Key System)
+# Deploy repository encryption password
 
-- name: Deploy generic password file
+- name: Deploy repository password file
   ansible.builtin.copy:
-    dest: "{{ restic_config_dir }}/passwords/{{ restic_generic_password_file }}"
-    content: "{{ restic_generic_password }}"
+    dest: "{{ restic_config_dir }}/passwords/{{ restic_password_file }}"
+    content: "{{ restic_password }}"
     mode: '0600'
     owner: root
     group: root
   no_log: "{{ not restic_debug_mode }}"
-  when: restic_generic_password | length > 0
-
-- name: Deploy playbook-specific password file
-  ansible.builtin.copy:
-    dest: "{{ restic_config_dir }}/passwords/{{ restic_playbook_password_file }}"
-    content: "{{ restic_playbook_password }}"
-    mode: '0600'
-    owner: root
-    group: root
-  no_log: "{{ not restic_debug_mode }}"
-  when: restic_playbook_password | length > 0
+  when: restic_password | length > 0
