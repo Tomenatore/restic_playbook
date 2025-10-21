@@ -6,61 +6,72 @@
 - name: Simple Backup to S3
   hosts: webservers
   become: yes
-  
+
   roles:
-    - role: restic_backup
+    - role: restic
       vars:
-        s3_bucket: "company-backups"
-        s3_region: "eu-central-1"
-        backup_sources:
-          - path: "/var/www"
+        restic_s3_bucket: "company-backups"
+        restic_s3_region: "eu-central-1"
+        restic_backup_sources:
+          - name: "var-www"
+            path: "/var/www"
             tags: ["web"]
             enabled: true
 
 ---
 # ========================================
-# Example 2: With External Pre/Post Task Files
+# Example 2: With Custom Hooks from Playbook Directory
 # ========================================
 
-- name: Backup with External Task Files
+- name: Backup with Custom Hooks
   hosts: dbservers
   become: yes
-  
+
   roles:
-    - role: restic_backup
+    - role: restic
       vars:
-        backup_target_type: "s3"
-        s3_bucket: "db-backups"
-        
-        backup_sources:
-          - path: "/var/backups"
-            tags: ["database"]
+        restic_backend_type: "s3"
+        restic_s3_bucket: "db-backups"
+
+        restic_backup_sources:
+          - name: "database"
+            path: "/var/lib/postgresql"
+            tags: ["database", "postgres"]
             enabled: true
-        
-        pre_backup_tasks_file: "{{ playbook_dir }}/tasks/pre_backup_tasks.yml"
-        post_backup_tasks_file: "{{ playbook_dir }}/tasks/post_backup_tasks.yml"
+
+        # Use custom hook scripts from playbook directory
+        # Create hooks/pre-backup-database.sh and hooks/post-backup-database.sh
+        restic_custom_hooks_dir: "{{ playbook_dir }}/hooks"
 
 ---
 # ========================================
-# Example 3: MySQL Database Backup
+# Example 3: With Inline Hook Configuration
 # ========================================
 
-- name: Backup MySQL Databases
+- name: Backup with Inline Hooks
   hosts: mysql_servers
   become: yes
-  
+
   roles:
-    - role: restic_backup
+    - role: restic
       vars:
-        s3_bucket: "mysql-backups"
-        
-        backup_sources:
-          - path: "/var/backups/mysql"
+        restic_s3_bucket: "mysql-backups"
+
+        restic_backup_sources:
+          - name: "mysql"
+            path: "/var/backups/mysql"
             tags: ["database", "mysql"]
             enabled: true
-        
-        pre_backup_tasks_file: "{{ playbook_dir }}/tasks/mysql_pre_backup.yml"
-        post_backup_tasks_file: "{{ playbook_dir }}/tasks/mysql_post_backup.yml"
+            # Pre-backup: dump database
+            pre_backup_commands:
+              - "mysqldump --all-databases > /var/backups/mysql/dump.sql"
+            # Post-backup: cleanup dump
+            post_backup_commands:
+              - "rm -f /var/backups/mysql/dump.sql"
+            # Optional: database dump helper
+            database_dump:
+              enabled: true
+              type: "mysql"
 
 ---
 # ========================================
@@ -70,15 +81,16 @@
 - name: Backup to NFS Mount
   hosts: appservers
   become: yes
-  
+
   roles:
-    - role: restic_backup
+    - role: restic
       vars:
-        backup_target_type: "local"
-        local_backup_path: "/mnt/nfs-backup/restic"
-        
-        backup_sources:
-          - path: "/opt/myapp"
+        restic_backend_type: "local"
+        restic_local_path: "/mnt/nfs-backup/restic"
+
+        restic_backup_sources:
+          - name: "myapp"
+            path: "/opt/myapp"
             tags: ["application"]
             enabled: true
 
@@ -90,203 +102,281 @@
 - name: Minimal Backup
   hosts: all
   become: yes
-  
+
   roles:
-    - role: restic_backup
+    - role: restic
       vars:
-        s3_bucket: "minimal-backup"
-        backup_sources:
-          - path: "/etc"
+        restic_s3_bucket: "minimal-backup"
+        restic_backup_sources:
+          - name: "etc"
+            path: "/etc"
             tags: ["config"]
             enabled: true
 
 ---
 # ========================================
-# Example 6: Multi-Environment Setup
+# Example 6: Multi-Environment with 2-Key Encryption
 # ========================================
 
-- name: Production Backup
+- name: Production Backup (Playbook-Specific Key)
   hosts: production
   become: yes
-  
+
   roles:
-    - role: restic_backup
+    - role: restic
       vars:
-        s3_bucket: "prod-backups"
-        backup_interval_hours: 24
-        
-        backup_time_window:
-          enabled: true
-          start_hour: 2
-          end_hour: 5
-        
-        backup_sources:
-          - path: "/var/www"
+        restic_s3_bucket: "prod-backups"
+        restic_use_playbook_key: true  # Use playbook-specific encryption
+
+        # Systemd timer configuration
+        restic_timer_on_calendar: "02:00"  # 2am daily
+        restic_timer_randomized_delay: "30min"
+
+        restic_backup_sources:
+          - name: "var-www"
+            path: "/var/www"
             tags: ["web", "production"]
             enabled: true
-        
-        pre_backup_tasks_file: "{{ playbook_dir }}/tasks/prod_pre_backup.yml"
-        post_backup_tasks_file: "{{ playbook_dir }}/tasks/prod_post_backup.yml"
 
-- name: Staging Backup
+- name: Staging Backup (Generic Key)
   hosts: staging
   become: yes
-  
-  roles:
-    - role: restic_backup
-      vars:
-        s3_bucket: "staging-backups"
-        backup_interval_hours: 12
 
-- name: Development Backup
-  hosts: development
-  become: yes
-  
   roles:
-    - role: restic_backup
+    - role: restic
       vars:
-        backup_target_type: "local"
-        local_backup_path: "/mnt/dev-backup"
-        backup_interval_hours: 6
+        restic_s3_bucket: "staging-backups"
+        restic_use_playbook_key: false  # Use generic key for shared access
+
+        restic_timer_on_calendar: "04:00"
 
 ---
 # ========================================
-# Example 7: Time Window Backup
+# Example 7: With Service Stop/Start Hooks
 # ========================================
 
-- name: Backup Only During Night Hours
+- name: Backup with Service Management
+  hosts: appservers
+  become: yes
+
+  roles:
+    - role: restic
+      vars:
+        restic_s3_bucket: "app-backups"
+
+        restic_backup_sources:
+          - name: "appdata"
+            path: "/var/lib/myapp"
+            tags: ["application"]
+            enabled: true
+            # Stop services before backup
+            stop_services:
+              - myapp
+              - nginx
+            # Start services after backup
+            start_services:
+              - myapp
+              - nginx
+
+---
+# ========================================
+# Example 8: Multiple Sources with Different Schedules
+# ========================================
+
+- name: Frequent Backup for Critical Data
   hosts: all
   become: yes
-  
+
   roles:
-    - role: restic_backup
+    - role: restic
       vars:
-        s3_bucket: "night-backups"
-        backup_interval_hours: 4
-        
-        # Only between 22:00 and 06:00
-        backup_time_window:
-          enabled: true
-          start_hour: 22
-          end_hour: 6
-        
-        backup_sources:
-          - path: "/var/www"
+        restic_s3_bucket: "multi-schedule-backups"
+
+        # Fast backups run more frequently
+        restic_timer_on_calendar: "hourly"
+
+        restic_backup_sources:
+          - name: "critical-db"
+            path: "/var/lib/mysql"
+            tags: ["critical", "database"]
+            enabled: true
+
+          - name: "var-www"
+            path: "/var/www"
             tags: ["web"]
             enabled: true
 
----
-# ========================================
-# Example 8: Group-Specific Configuration
-# ========================================
-# Configuration stored in group_vars
-
-- name: Backup with Group Variables
-  hosts: all
-  become: yes
-  
-  roles:
-    - restic_backup
-    # All config loaded from:
-    # - group_vars/all/vars.yml
-    # - group_vars/webservers/vars.yml
-    # - group_vars/dbservers/vars.yml
+          - name: "etc"
+            path: "/etc"
+            tags: ["config"]
+            enabled: true
 
 ---
 # ========================================
-# Example 9: Multiple Sources with Different Tags
+# Example 9: Custom Retention Policy
 # ========================================
 
-- name: Multiple Backup Sources
+- name: Backup with Long-term Retention
   hosts: all
   become: yes
-  
+
   roles:
-    - role: restic_backup
+    - role: restic
       vars:
-        s3_bucket: "multi-source-backups"
-        
-        backup_sources:
-          - path: "/var/www"
-            tags: ["web", "production"]
+        restic_s3_bucket: "long-term-backups"
+
+        restic_backup_sources:
+          - name: "archives"
+            path: "/var/archives"
+            tags: ["archives"]
             enabled: true
-          - path: "/etc"
-            tags: ["config", "system"]
-            enabled: true
-          - path: "/var/backups"
-            tags: ["dumps", "database"]
-            enabled: true
-          - path: "/opt/applications"
-            tags: ["applications"]
-            enabled: true
+
+        # Keep more snapshots for long-term storage
+        restic_retention_keep_last: 14
+        restic_retention_keep_hourly: 48
+        restic_retention_keep_daily: 30
+        restic_retention_keep_weekly: 12
+        restic_retention_keep_monthly: 24
+        restic_retention_keep_yearly: 10
 
 ---
 # ========================================
-# Example 10: Custom Retention Policy
-# ========================================
-
-- name: Backup with Custom Retention
-  hosts: all
-  become: yes
-  
-  roles:
-    - role: restic_backup
-      vars:
-        s3_bucket: "long-term-backups"
-        
-        backup_sources:
-          - path: "/var/www"
-            tags: ["web"]
-            enabled: true
-        
-        retention_policy:
-          keep_last: 14
-          keep_hourly: 48
-          keep_daily: 30
-          keep_weekly: 12
-          keep_monthly: 24
-          keep_yearly: 10
-
----
-# ========================================
-# Example 11: MinIO Backend
+# Example 10: MinIO Backend
 # ========================================
 
 - name: Backup to MinIO
   hosts: all
   become: yes
-  
+
   roles:
-    - role: restic_backup
+    - role: restic
       vars:
-        backup_target_type: "s3"
-        s3_bucket: "restic-backups"
-        s3_region: "us-east-1"
-        s3_endpoint: "https://minio.example.com"
-        
-        backup_sources:
-          - path: "/var/www"
+        restic_backend_type: "s3"
+        restic_s3_bucket: "restic-backups"
+        restic_s3_region: "us-east-1"
+        restic_s3_endpoint: "https://minio.example.com"
+
+        restic_backup_sources:
+          - name: "var-www"
+            path: "/var/www"
             tags: ["web"]
             enabled: true
 
 ---
 # ========================================
-# Example 12: Wasabi Cloud Storage
+# Example 11: Wasabi Cloud Storage
 # ========================================
 
 - name: Backup to Wasabi
   hosts: all
   become: yes
-  
+
   roles:
-    - role: restic_backup
+    - role: restic
       vars:
-        backup_target_type: "s3"
-        s3_bucket: "my-wasabi-bucket"
-        s3_region: "eu-central-1"
-        s3_endpoint: "https://s3.eu-central-1.wasabisys.com"
-        
-        backup_sources:
-          - path: "/var/www"
-            tags: ["web"]
+        restic_backend_type: "s3"
+        restic_s3_bucket: "my-wasabi-bucket"
+        restic_s3_region: "eu-central-1"
+        restic_s3_endpoint: "https://s3.eu-central-1.wasabisys.com"
+
+        restic_backup_sources:
+          - name: "data"
+            path: "/var/data"
+            tags: ["data"]
             enabled: true
+
+---
+# ========================================
+# Example 12: Per-Source Custom Hook Directory
+# ========================================
+
+- name: Backup with Per-Source Hooks
+  hosts: all
+  become: yes
+
+  roles:
+    - role: restic
+      vars:
+        restic_s3_bucket: "custom-hooks-backup"
+
+        restic_backup_sources:
+          - name: "database"
+            path: "/var/lib/postgresql"
+            tags: ["database"]
+            enabled: true
+            # Override hook directory for this source only
+            hook_script_dir: "/opt/custom-hooks"
+
+          - name: "files"
+            path: "/var/files"
+            tags: ["files"]
+            enabled: true
+            # Uses default restic_hooks_dir
+
+---
+# ========================================
+# Example 13: Disable Default Hooks (Manual Hook Management)
+# ========================================
+
+- name: Backup with Manual Hooks
+  hosts: all
+  become: yes
+
+  roles:
+    - role: restic
+      vars:
+        restic_s3_bucket: "manual-hooks-backup"
+
+        # Don't deploy default hook templates
+        # User manually creates hooks in /etc/restic/hooks/
+        restic_deploy_default_hooks: false
+
+        restic_backup_sources:
+          - name: "custom"
+            path: "/var/custom"
+            tags: ["custom"]
+            enabled: true
+
+---
+# ========================================
+# Example 14: Resource-Limited Backup
+# ========================================
+
+- name: Low-Priority Backup
+  hosts: all
+  become: yes
+
+  roles:
+    - role: restic
+      vars:
+        restic_s3_bucket: "low-priority-backup"
+
+        # Limit resources to avoid impacting production
+        restic_cpu_quota: 50          # Max 50% CPU
+        restic_io_weight: 50          # Lower I/O priority
+        restic_nice_level: 19         # Lowest CPU priority
+        restic_upload_limit_kbps: 10240  # Max 10 MB/s upload
+
+        restic_backup_sources:
+          - name: "logs"
+            path: "/var/log"
+            tags: ["logs"]
+            enabled: true
+
+---
+# ========================================
+# Example 15: Group-Based Configuration
+# ========================================
+# All configuration loaded from group_vars
+
+- name: Backup with Group Variables
+  hosts: all
+  become: yes
+
+  roles:
+    - restic
+    # Configuration loaded from:
+    # - group_vars/all/vars.yml
+    # - group_vars/webservers/vars.yml
+    # - group_vars/dbservers/vars.yml
+    # - group_vars/all/vault.yml (encrypted)

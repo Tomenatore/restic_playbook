@@ -11,7 +11,7 @@ Group=root
 
 # Environment
 Environment="RESTIC_REPOSITORY={{ restic_repository }}"
-Environment="RESTIC_PASSWORD_FILE={{ restic_config_dir }}/passwords/{{ restic_playbook_password_file }}"
+Environment="RESTIC_PASSWORD_FILE={{ restic_config_dir }}/passwords/{% if restic_use_playbook_key %}{{ restic_playbook_password_file }}{% else %}{{ restic_generic_password_file }}{% endif %}"
 {% if restic_backend_type == "s3" %}
 Environment="AWS_ACCESS_KEY_ID={{ restic_s3_access_key }}"
 Environment="AWS_SECRET_ACCESS_KEY={{ restic_s3_secret_key }}"
@@ -25,9 +25,11 @@ Environment="RESTIC_LIMIT_UPLOAD={{ restic_upload_limit_kbps }}"
 Environment="RESTIC_LIMIT_DOWNLOAD={{ restic_download_limit_kbps }}"
 {% endif %}
 
-# Restic Hooks
-Environment="RESTIC_PRE_SCRIPT={{ restic_scripts_dir }}/pre-backup-%i.sh"
-Environment="RESTIC_POST_SCRIPT={{ restic_scripts_dir }}/post-backup-%i.sh"
+# Restic Hooks (native hook system)
+# Restic automatically calls these scripts before/after backup
+{% set hook_dir = item.hook_script_dir | default(restic_hooks_dir) %}
+Environment="RESTIC_PRE_SCRIPT={{ hook_dir }}/pre-backup-%i.sh"
+Environment="RESTIC_POST_SCRIPT={{ hook_dir }}/post-backup-%i.sh"
 
 # Lock file settings
 Environment="RESTIC_LOCK_FILE={{ restic_lock_dir }}/%i.lock"
@@ -54,14 +56,8 @@ ExecStartPre=/bin/bash -c ' \
 # Create lock file
 ExecStartPre=/bin/bash -c 'touch "${RESTIC_LOCK_FILE}"'
 
-# Pre-backup hook
-ExecStartPre=/bin/bash -c 'if [ -x "${RESTIC_PRE_SCRIPT}" ]; then "${RESTIC_PRE_SCRIPT}"; fi'
-
-# Execute backup
+# Execute backup (restic will call pre/post hooks automatically)
 ExecStart=/bin/bash {{ restic_scripts_dir }}/backup-%i.sh
-
-# Post-backup hook (always run)
-ExecStopPost=/bin/bash -c 'if [ -x "${RESTIC_POST_SCRIPT}" ]; then "${RESTIC_POST_SCRIPT}" "$EXIT_STATUS"; fi'
 
 # Remove lock file (always)
 ExecStopPost=/bin/bash -c 'rm -f "${RESTIC_LOCK_FILE}"'
@@ -80,7 +76,7 @@ Nice={{ restic_nice_level }}
 # Security
 PrivateTmp=yes
 ProtectSystem=strict
-ReadWritePaths={{ restic_config_dir }} {{ restic_lock_dir }} {{ restic_scripts_dir }} {{ restic_checkmk_spool_dir }} {% for source in restic_backup_sources %}{{ source.path }} {% endfor %}
+ReadWritePaths={{ restic_config_dir }} {{ restic_lock_dir }} {{ restic_scripts_dir }} {{ restic_hooks_dir }} {{ restic_checkmk_spool_dir }} {% for source in restic_backup_sources %}{{ source.path }} {% endfor %}
 
 # Restart behavior
 Restart=no

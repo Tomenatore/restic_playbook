@@ -103,7 +103,9 @@ Automatically handles stale locks:
 
 ## Pre/Post-Backup Hooks
 
-Configure hooks per source:
+Uses Restic's **native hook system** (`RESTIC_PRE_SCRIPT`, `RESTIC_POST_SCRIPT`). Restic automatically calls these scripts before/after backup.
+
+### Option 1: Inline Configuration (Default Templates)
 
 ```yaml
 restic_backup_sources:
@@ -124,9 +126,45 @@ restic_backup_sources:
       - postgresql
 ```
 
-Hooks execute via:
-- **Pre**: `ExecStartPre` in systemd unit
-- **Post**: `ExecStopPost` (always runs)
+Role generates hook scripts in `/etc/restic/hooks/` from templates.
+
+### Option 2: Custom Hook Scripts from Playbook
+
+Create custom hooks in your playbook directory:
+
+```bash
+playbook_dir/
+  hooks/
+    pre-backup-database.sh
+    post-backup-database.sh
+    pre-backup-files.sh
+    post-backup-files.sh
+```
+
+Configure role to copy them:
+
+```yaml
+restic_custom_hooks_dir: "{{ playbook_dir }}/hooks"
+```
+
+### Option 3: Manual Hook Management
+
+Disable automatic deployment and manually create hooks:
+
+```yaml
+restic_deploy_default_hooks: false
+```
+
+Then manually create hooks in `/etc/restic/hooks/`:
+- `pre-backup-<source>.sh`
+- `post-backup-<source>.sh`
+
+### Hook Script Requirements
+
+- **Pre-hook**: Exit code 0 = continue, non-zero = abort backup
+- **Post-hook**: Receives backup exit status as `$1`
+- **Executable**: Scripts must have execute permission
+- **Naming**: `pre-backup-<source-name>.sh`, `post-backup-<source-name>.sh`
 
 ## CheckMK Integration
 

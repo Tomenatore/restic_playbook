@@ -183,6 +183,21 @@ restic_config_dir: "/etc/restic"
 # Scripts directory
 restic_scripts_dir: "/usr/local/bin/restic"
 
+# Hooks directory (can be overridden per source)
+restic_hooks_dir: "/etc/restic/hooks"
+
+# ========================================
+# HOOKS
+# ========================================
+
+# Deploy default hook templates
+restic_deploy_default_hooks: true
+
+# Custom hooks directory on control node (optional)
+# If set, hooks will be copied from this directory instead of using templates
+# Example: restic_custom_hooks_dir: "{{ playbook_dir }}/hooks"
+restic_custom_hooks_dir: ""
+
 # ========================================
 # MONITORING
 # ========================================

@@ -66,6 +66,14 @@
     owner: root
     group: root
 
+- name: Create Restic hooks directory
+  ansible.builtin.file:
+    path: "{{ restic_hooks_dir }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
 - name: Ensure Check_MK spool directory exists
   ansible.builtin.file:
     path: "{{ restic_checkmk_spool_dir }}"
@@ -210,28 +218,66 @@
 # ========================================
 # DEPLOY HOOKS
 # ========================================
+# Hooks use Restic's native hook system (RESTIC_PRE_SCRIPT, RESTIC_POST_SCRIPT)
+# Option 1: Use default templates (restic_deploy_default_hooks: true)
+# Option 2: Copy from custom directory (restic_custom_hooks_dir: /path/to/hooks)
+# Option 3: User manually creates hooks in restic_hooks_dir
 
-- name: Deploy pre-backup hooks for each source
+- name: Deploy pre-backup hooks from templates
   ansible.builtin.template:
     src: hooks/pre-backup.sh.j2
-    dest: "{{ restic_scripts_dir }}/pre-backup-{{ item.name }}.sh"
+    dest: "{{ item.hook_script_dir | default(restic_hooks_dir) }}/pre-backup-{{ item.name }}.sh"
     mode: '0755'
     owner: root
     group: root
   loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
   loop_control:
     label: "{{ item.name }}"
+  when:
+    - restic_deploy_default_hooks | bool
+    - restic_custom_hooks_dir | length == 0
 
-- name: Deploy post-backup hooks for each source
+- name: Deploy post-backup hooks from templates
   ansible.builtin.template:
     src: hooks/post-backup.sh.j2
-    dest: "{{ restic_scripts_dir }}/post-backup-{{ item.name }}.sh"
+    dest: "{{ item.hook_script_dir | default(restic_hooks_dir) }}/post-backup-{{ item.name }}.sh"
     mode: '0755'
     owner: root
     group: root
   loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
   loop_control:
     label: "{{ item.name }}"
+  when:
+    - restic_deploy_default_hooks | bool
+    - restic_custom_hooks_dir | length == 0
+
+- name: Copy custom pre-backup hooks
+  ansible.builtin.copy:
+    src: "{{ restic_custom_hooks_dir }}/pre-backup-{{ item.name }}.sh"
+    dest: "{{ item.hook_script_dir | default(restic_hooks_dir) }}/pre-backup-{{ item.name }}.sh"
+    mode: '0755'
+    owner: root
+    group: root
+  loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - restic_custom_hooks_dir | length > 0
+  ignore_errors: yes  # Hook might not exist for this source
+
+- name: Copy custom post-backup hooks
+  ansible.builtin.copy:
+    src: "{{ restic_custom_hooks_dir }}/post-backup-{{ item.name }}.sh"
+    dest: "{{ item.hook_script_dir | default(restic_hooks_dir) }}/post-backup-{{ item.name }}.sh"
+    mode: '0755'
+    owner: root
+    group: root
+  loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - restic_custom_hooks_dir | length > 0
+  ignore_errors: yes  # Hook might not exist for this source
 
 # ========================================
 # DEPLOY SYSTEMD UNITS - BACKUP
