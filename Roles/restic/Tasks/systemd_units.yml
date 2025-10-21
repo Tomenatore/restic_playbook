@@ -43,36 +43,37 @@
 - name: Flush handlers to reload systemd
   ansible.builtin.meta: flush_handlers
 
-- name: Build list of timers to enable
-  ansible.builtin.set_fact:
-    restic_timers_to_enable: >-
-      {{
-        (restic_backup_sources | selectattr('enabled') | list |
-         map(attribute='name') |
-         map('regex_replace', '^(.*)$', 'restic-backup@\1.timer') | list
-         if restic_enable_backup else [])
-        +
-        (['restic-prune@' + (restic_backup_sources | selectattr('enabled') | list | first).name + '.timer']
-         if restic_enable_prune and (restic_backup_sources | selectattr('enabled') | list | length) > 0 else [])
-        +
-        (['restic-check@' + (restic_backup_sources | selectattr('enabled') | list | first).name + '.timer']
-         if restic_enable_check and (restic_backup_sources | selectattr('enabled') | list | length) > 0 else [])
-        +
-        (['restic-scan@' + (restic_backup_sources | selectattr('enabled') | list | first).name + '.timer']
-         if restic_enable_scan and (restic_backup_sources | selectattr('enabled') | list | length) > 0 else [])
-      }}
-  when: restic_enable_timers | bool
-
-- name: Enable and start all timers
-  ansible.builtin.systemd:
-    name: "{{ item }}"
-    enabled: yes
-    state: started
-    daemon_reload: yes
-  loop: "{{ restic_timers_to_enable | default([]) }}"
+- name: "Enable and start {{ unit_config.unit }} timers"
+  loop:
+    - unit: "backup"
+      enabled: "{{ restic_enable_backup }}"
+      sources: "{{ restic_backup_sources | selectattr('enabled') | list }}"
+    - unit: "prune"
+      enabled: "{{ restic_enable_prune }}"
+      sources: "{{ [restic_backup_sources | selectattr('enabled') | list | first] if (restic_backup_sources | selectattr('enabled') | list | length) > 0 else [] }}"
+    - unit: "check"
+      enabled: "{{ restic_enable_check }}"
+      sources: "{{ [restic_backup_sources | selectattr('enabled') | list | first] if (restic_backup_sources | selectattr('enabled') | list | length) > 0 else [] }}"
+    - unit: "scan"
+      enabled: "{{ restic_enable_scan }}"
+      sources: "{{ [restic_backup_sources | selectattr('enabled') | list | first] if (restic_backup_sources | selectattr('enabled') | list | length) > 0 else [] }}"
   loop_control:
-    label: "{{ item }}"
-  when: restic_enable_timers | bool
+    loop_var: unit_config
+    label: "{{ unit_config.unit }}"
+  when:
+    - unit_config.enabled | bool
+    - restic_enable_timers | bool
+    - unit_config.sources | length > 0
+  block:
+    - name: "Enable and start restic-{{ unit_config.unit }} timer for each source"
+      ansible.builtin.systemd:
+        name: "restic-{{ unit_config.unit }}@{{ item.name }}.timer"
+        enabled: yes
+        state: started
+        daemon_reload: yes
+      loop: "{{ unit_config.sources }}"
+      loop_control:
+        label: "{{ unit_config.unit }}@{{ item.name }}"
 
 # ========================================
 # SUMMARY
