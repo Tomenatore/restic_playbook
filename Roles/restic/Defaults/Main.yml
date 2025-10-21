@@ -189,6 +189,9 @@ restic_scripts_dir: "/usr/local/bin/restic"
 # Hooks directory (can be overridden per source)
 restic_hooks_dir: "/etc/restic/hooks"
 
+# Helper scripts directory for admin tools (restore, stats, etc.)
+restic_helpers_dir: "/opt/restic"
+
 # ========================================
 # HOOKS
 # ========================================

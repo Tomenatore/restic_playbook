@@ -31,3 +31,27 @@
   loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
   loop_control:
     label: "{{ item.name }}"
+
+- name: Create helper scripts directory
+  ansible.builtin.file:
+    path: "{{ restic_helpers_dir }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Deploy restore helper script
+  ansible.builtin.template:
+    src: scripts/restic-restore.sh.j2
+    dest: "{{ restic_helpers_dir }}/restic-restore.sh"
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Deploy repository info helper script
+  ansible.builtin.template:
+    src: scripts/restic-repo-info.sh.j2
+    dest: "{{ restic_helpers_dir }}/restic-repo-info.sh"
+    mode: '0755'
+    owner: root
+    group: root

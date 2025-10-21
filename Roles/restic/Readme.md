@@ -46,6 +46,10 @@ Production-ready Ansible role for deploying Restic backups using systemd units a
 ├── backup-<source>.sh          # Backup script per source
 ├── scan-<source>.sh            # Statistics collection script
 └── checkmk-status.sh           # CheckMK integration script
+
+/opt/restic/
+├── restic-restore.sh           # Helper script for restore operations
+└── restic-repo-info.sh         # Helper script for repo stats and diagnostics
 ```
 
 ## Lock Management
@@ -494,6 +498,141 @@ systemctl start restic-backup@var-www.service
 systemctl enable restic-backup@var-www.timer
 systemctl disable restic-backup@var-www.timer
 ```
+
+## Helper Scripts
+
+The role deploys two convenient helper scripts to `/opt/restic/` for administrators. These scripts have all environment variables and credentials pre-configured, making restore operations and repository diagnostics quick and easy.
+
+### Restore Helper (`/opt/restic/restic-restore.sh`)
+
+Interactive restore tool with pre-configured repository access.
+
+**Available Commands:**
+
+```bash
+# List all snapshots
+/opt/restic/restic-restore.sh list
+
+# List snapshots for specific tag
+/opt/restic/restic-restore.sh list-tag var-www
+
+# List files in a snapshot
+/opt/restic/restic-restore.sh list-files latest
+/opt/restic/restic-restore.sh list-files abc123de
+
+# Find files across all snapshots
+/opt/restic/restic-restore.sh find "nginx.conf"
+/opt/restic/restic-restore.sh find "*.log"
+
+# Restore entire snapshot
+/opt/restic/restic-restore.sh restore latest /tmp/restore
+/opt/restic/restic-restore.sh restore abc123de /tmp/restore
+
+# Restore specific file
+/opt/restic/restic-restore.sh restore-file latest /tmp "etc/nginx/nginx.conf"
+
+# Restore with verification
+/opt/restic/restic-restore.sh restore-verify latest /tmp/restore
+
+# Mount repository for browsing (FUSE)
+/opt/restic/restic-restore.sh mount /mnt/restic-mount
+# Browse: ls /mnt/restic-mount/snapshots/latest/
+/opt/restic/restic-restore.sh umount /mnt/restic-mount
+
+# Compare snapshots
+/opt/restic/restic-restore.sh diff abc123de xyz789ab
+
+# Repository maintenance
+/opt/restic/restic-restore.sh check
+/opt/restic/restic-restore.sh unlock
+```
+
+**Features:**
+- Pre-configured with repository URL and credentials
+- Color-coded output for better readability
+- Interactive prompts with safety checks
+- Built-in help: `/opt/restic/restic-restore.sh help`
+
+### Repository Info Helper (`/opt/restic/restic-repo-info.sh`)
+
+Repository statistics and diagnostic tool.
+
+**Available Commands:**
+
+```bash
+# Quick repository status overview
+/opt/restic/restic-repo-info.sh status
+
+# Detailed statistics
+/opt/restic/restic-repo-info.sh stats
+/opt/restic/restic-repo-info.sh stats-raw        # Actual storage used
+/opt/restic/restic-repo-info.sh stats-restore    # Uncompressed size
+
+# Snapshot management
+/opt/restic/restic-repo-info.sh snapshots
+/opt/restic/restic-repo-info.sh snapshots-latest
+/opt/restic/restic-repo-info.sh snapshots-json
+
+# Lock management
+/opt/restic/restic-repo-info.sh locks
+/opt/restic/restic-repo-info.sh unlock
+
+# Repository checks
+/opt/restic/restic-repo-info.sh check            # Quick integrity check
+/opt/restic/restic-repo-info.sh check-data       # Full data verification (slow!)
+
+# Maintenance
+/opt/restic/restic-repo-info.sh prune-dry        # Preview prune operation
+/opt/restic/restic-repo-info.sh size             # Size per snapshot
+/opt/restic/restic-repo-info.sh cache-clear      # Clear local cache
+
+# Debugging
+/opt/restic/restic-repo-info.sh debug            # Show config and env vars
+```
+
+**Features:**
+- Pre-configured repository access (no manual env setup needed)
+- Color-coded output with status indicators
+- Human-readable size formatting
+- Safety prompts for destructive operations
+- Built-in help: `/opt/restic/restic-repo-info.sh help`
+
+**Example Usage:**
+
+```bash
+# Quick check before restore
+/opt/restic/restic-repo-info.sh status
+
+# Find latest snapshot
+/opt/restic/restic-restore.sh list | tail -n 5
+
+# Check repository integrity
+/opt/restic/restic-repo-info.sh check
+
+# Restore specific file from yesterday
+/opt/restic/restic-restore.sh find "important.txt"
+/opt/restic/restic-restore.sh restore abc123de /tmp
+
+# Browse backups interactively
+/opt/restic/restic-restore.sh mount /mnt/backup
+ls -lah /mnt/backup/snapshots/latest/etc/
+cp /mnt/backup/snapshots/latest/etc/nginx/nginx.conf /tmp/
+/opt/restic/restic-restore.sh umount /mnt/backup
+```
+
+**Configuration:**
+
+Helper scripts location can be customized:
+
+```yaml
+restic_helpers_dir: "/opt/restic"  # Default location
+```
+
+Scripts are automatically deployed during role execution with appropriate permissions (755) and pre-configured with:
+- Repository URL
+- Password file path
+- S3/backend credentials (if applicable)
+- Retention policy (for prune-dry command)
 
 ## Key Variables
 
@@ -990,31 +1129,13 @@ ansible-playbook playbook.yml --ask-vault-pass
 
 ```bash
 export RESTIC_REPOSITORY="s3:s3.eu-central-1.amazonaws.com/bucket/prefix"
-export RESTIC_PASSWORD_FILE="/etc/restic/passwords/playbook.key"
+export RESTIC_PASSWORD_FILE="/etc/restic/passwords/repository.key"
 export AWS_ACCESS_KEY_ID="..."
 export AWS_SECRET_ACCESS_KEY="..."
 
 restic snapshots
 restic stats
 ```
-
-## Migration from Old Role
-
-| Old Variable | New Variable |
-|--------------|--------------|
-| `backup_target_type` | `restic_backend_type` |
-| `s3_bucket` | `restic_s3_bucket` |
-| `backup_sources` | `restic_backup_sources` |
-| `enable_checkmk` | `restic_enable_checkmk` |
-| `retention_policy.keep_daily` | `restic_retention_keep_daily` |
-
-Steps:
-1. Update role name: `restic_backup` → `restic`
-2. Add `restic_` prefix to all variables
-3. Remove Ansible scheduling (cron/Tower)
-4. Convert pre/post tasks to hooks
-5. Deploy new role
-6. Verify: `systemctl list-timers 'restic-*'`
 
 ## License
 
