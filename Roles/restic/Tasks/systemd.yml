@@ -1,0 +1,99 @@
+---
+# roles/restic/tasks/systemd.yml
+# Deploy systemd service and timer units
+
+# ========================================
+# BACKUP UNITS
+# ========================================
+
+- name: Deploy backup service units
+  ansible.builtin.template:
+    src: systemd/restic-backup@.service.j2
+    dest: /etc/systemd/system/restic-backup@.service
+    mode: '0644'
+    owner: root
+    group: root
+  notify: systemd daemon-reload
+  when: restic_enable_backup | bool
+
+- name: Deploy backup timer units
+  ansible.builtin.template:
+    src: systemd/restic-backup@.timer.j2
+    dest: /etc/systemd/system/restic-backup@.timer
+    mode: '0644'
+    owner: root
+    group: root
+  notify: systemd daemon-reload
+  when: restic_enable_backup | bool and restic_enable_timers | bool
+
+# ========================================
+# PRUNE UNITS
+# ========================================
+
+- name: Deploy prune service units
+  ansible.builtin.template:
+    src: systemd/restic-prune@.service.j2
+    dest: /etc/systemd/system/restic-prune@.service
+    mode: '0644'
+    owner: root
+    group: root
+  notify: systemd daemon-reload
+  when: restic_enable_prune | bool
+
+- name: Deploy prune timer units
+  ansible.builtin.template:
+    src: systemd/restic-prune@.timer.j2
+    dest: /etc/systemd/system/restic-prune@.timer
+    mode: '0644'
+    owner: root
+    group: root
+  notify: systemd daemon-reload
+  when: restic_enable_prune | bool and restic_enable_timers | bool
+
+# ========================================
+# CHECK UNITS
+# ========================================
+
+- name: Deploy check service units
+  ansible.builtin.template:
+    src: systemd/restic-check@.service.j2
+    dest: /etc/systemd/system/restic-check@.service
+    mode: '0644'
+    owner: root
+    group: root
+  notify: systemd daemon-reload
+  when: restic_enable_check | bool
+
+- name: Deploy check timer units
+  ansible.builtin.template:
+    src: systemd/restic-check@.timer.j2
+    dest: /etc/systemd/system/restic-check@.timer
+    mode: '0644'
+    owner: root
+    group: root
+  notify: systemd daemon-reload
+  when: restic_enable_check | bool and restic_enable_timers | bool
+
+# ========================================
+# SCAN UNITS
+# ========================================
+
+- name: Deploy scan service units
+  ansible.builtin.template:
+    src: systemd/restic-scan@.service.j2
+    dest: /etc/systemd/system/restic-scan@.service
+    mode: '0644'
+    owner: root
+    group: root
+  notify: systemd daemon-reload
+  when: restic_enable_scan | bool
+
+- name: Deploy scan timer units
+  ansible.builtin.template:
+    src: systemd/restic-scan@.timer.j2
+    dest: /etc/systemd/system/restic-scan@.timer
+    mode: '0644'
+    owner: root
+    group: root
+  notify: systemd daemon-reload
+  when: restic_enable_scan | bool and restic_enable_timers | bool
