@@ -60,10 +60,7 @@ ExecStartPre=/bin/bash -c ' \
   fi'
 
 # Execute backup (restic will call pre/post hooks automatically)
-{% set timeout = item.timeout_seconds | default(restic_backup_timeout_seconds) %}
-{% if timeout > 0 %}
-TimeoutStartSec={{ timeout }}
-{% endif %}
+TimeoutStartSec={{ item.timeout_seconds | default(restic_backup_timeout_seconds) }}
 ExecStart=/bin/bash {{ restic_scripts_dir }}/backup-%i.sh
 
 # Send CheckMK status
