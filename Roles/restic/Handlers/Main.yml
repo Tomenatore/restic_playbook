@@ -1,0 +1,7 @@
+---
+# roles/restic/handlers/main.yml
+# Handlers for restic role
+
+- name: systemd daemon-reload
+  ansible.builtin.systemd:
+    daemon_reload: yes

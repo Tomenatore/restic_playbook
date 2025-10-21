@@ -1,20 +1,20 @@
 ---
 # playbook.yml
 # ========================================
-# Restic Backup Playbook
+# Restic Backup Playbook (Systemd-Based)
 # ========================================
 
-- name: Backup Servers
+- name: Deploy Restic Backup System
   hosts: all
   become: yes
-  
+
   roles:
-    - restic_backup
+    - restic
 
 # ========================================
 # CONFIGURATION
 # ========================================
-# 
+#
 # Configure the role in:
 # - group_vars/all/vars.yml         (General settings)
 # - group_vars/all/vault.yml        (Encrypted secrets)
@@ -22,28 +22,14 @@
 # - group_vars/<group>/vars.yml     (Group-specific)
 #
 # ========================================
-# PRE/POST BACKUP TASKS
+# SYSTEMD DEPLOYMENT
 # ========================================
 #
-# Pre/Post tasks are executed via external files:
-# 
-# - hosts: all
-#   become: yes
-#   roles:
-#     - role: restic_backup
-#       vars:
-#         pre_backup_tasks_file: "{{ playbook_dir }}/tasks/pre_backup.yml"
-#         post_backup_tasks_file: "{{ playbook_dir }}/tasks/post_backup.yml"
+# This playbook deploys systemd units and timers.
+# Backups are NOT executed by Ansible but by systemd timers.
 #
-# ========================================
-# EXECUTION
-# ========================================
-#
-# Manual execution with vault password prompt:
+# Deployment:
 #   ansible-playbook playbook.yml --ask-vault-pass
-#
-# Manual execution with vault password file:
-#   ansible-playbook playbook.yml --vault-password-file ~/.vault_pass
 #
 # Syntax check:
 #   ansible-playbook playbook.yml --syntax-check
@@ -52,41 +38,59 @@
 #   ansible-playbook playbook.yml --check --ask-vault-pass
 #
 # ========================================
-# AUTOMATIC EXECUTION (SCHEDULER REQUIRED)
+# SYSTEMD MANAGEMENT
 # ========================================
 #
-# IMPORTANT: This playbook does NOT run automatically!
-# You MUST set up a scheduler (cron or systemd timer) to run it.
+# List all restic timers:
+#   systemctl list-timers 'restic-*'
 #
-# The role checks backup_interval_hours to determine if a backup is due.
-# If NOT due: Playbook exits immediately (~2 seconds)
-# If due: Backup is performed
+# Check status of specific backup:
+#   systemctl status restic-backup@var-www.timer
+#   systemctl status restic-backup@var-www.service
 #
-# Example Cron (runs every 5 minutes, backups only when due):
-#   */5 * * * * /usr/bin/ansible-playbook /path/to/playbook.yml --vault-password-file /root/.vault_pass
+# View logs:
+#   journalctl -u 'restic-backup@*' -f
+#   journalctl -u restic-backup@var-www.service
 #
-# Example Systemd Timer (see documentation for full setup):
-#   [Unit]
-#   Description=Restic Backup Timer
-#   
-#   [Timer]
-#   OnCalendar=*:0/5
-#   Persistent=true
-#   
-#   [Install]
-#   WantedBy=timers.target
+# Manual trigger:
+#   systemctl start restic-backup@var-www.service
+#
+# Enable/disable timers:
+#   systemctl enable restic-backup@var-www.timer
+#   systemctl disable restic-backup@var-www.timer
 #
 # ========================================
 # MONITORING
 # ========================================
 #
-# Check_MK integration (automatic):
-#   enable_checkmk: true
-#   checkmk_service_name: "Restic_Backup"
+# Check_MK integration:
+#   - Each systemd unit reports to CheckMK with custom tags
+#   - Service names: Restic_backup_<source>, Restic_prune_<source>, etc.
+#   - Spool directory: /var/lib/check_mk_agent/spool
 #
-# Logs:
-#   /var/log/restic/backup-YYYY-MM-DD.log
+# Syslog:
+#   - All operations logged to syslog with tag 'restic'
+#   - Facility: local0
 #
-# Last backup:
-#   cat /root/.restic/last_backup_timestamp
-#   date -d @$(cat /root/.restic/last_backup_timestamp)
+# ========================================
+# PRE/POST BACKUP HOOKS
+# ========================================
+#
+# Configure hooks in restic_backup_sources:
+#
+# restic_backup_sources:
+#   - name: "database-server"
+#     path: "/var/lib/postgresql"
+#     tags: ["database", "postgres"]
+#     enabled: true
+#     pre_backup_commands:
+#       - "pg_dump dbname > /var/backups/dbname.sql"
+#     post_backup_commands:
+#       - "rm -f /var/backups/dbname.sql"
+#     stop_services:
+#       - postgresql
+#     start_services:
+#       - postgresql
+#
+# Hooks are executed as shell scripts via systemd ExecStartPre/ExecStopPost
+#

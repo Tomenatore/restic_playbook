@@ -1,0 +1,89 @@
+[Unit]
+Description=Restic Backup Service for %i
+After=network-online.target
+Wants=network-online.target
+Documentation=https://restic.readthedocs.io/
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+
+# Environment
+Environment="RESTIC_REPOSITORY={{ restic_repository }}"
+Environment="RESTIC_PASSWORD_FILE={{ restic_config_dir }}/passwords/{{ restic_playbook_password_file }}"
+{% if restic_backend_type == "s3" %}
+Environment="AWS_ACCESS_KEY_ID={{ restic_s3_access_key }}"
+Environment="AWS_SECRET_ACCESS_KEY={{ restic_s3_secret_key }}"
+Environment="AWS_DEFAULT_REGION={{ restic_s3_region }}"
+{% endif %}
+Environment="RESTIC_READ_CONCURRENCY={{ restic_read_concurrency }}"
+{% if restic_upload_limit_kbps > 0 %}
+Environment="RESTIC_LIMIT_UPLOAD={{ restic_upload_limit_kbps }}"
+{% endif %}
+{% if restic_download_limit_kbps > 0 %}
+Environment="RESTIC_LIMIT_DOWNLOAD={{ restic_download_limit_kbps }}"
+{% endif %}
+
+# Restic Hooks
+Environment="RESTIC_PRE_SCRIPT={{ restic_scripts_dir }}/pre-backup-%i.sh"
+Environment="RESTIC_POST_SCRIPT={{ restic_scripts_dir }}/post-backup-%i.sh"
+
+# Lock file settings
+Environment="RESTIC_LOCK_FILE={{ restic_lock_dir }}/%i.lock"
+Environment="RESTIC_LOCK_MAX_AGE_HOURS={{ restic_lock_max_age_hours }}"
+
+# CheckMK Custom Tag
+Environment="CHECKMK_TAG=restic_backup_%i"
+
+# Unlock mechanism - check if lock is stale
+ExecStartPre=/bin/bash -c ' \
+  if [ -f "${RESTIC_LOCK_FILE}" ]; then \
+    LOCK_AGE=$(($(date +%%s) - $(stat -c %%Y "${RESTIC_LOCK_FILE}"))); \
+    MAX_AGE=$((${RESTIC_LOCK_MAX_AGE_HOURS} * 3600)); \
+    if [ ${LOCK_AGE} -gt ${MAX_AGE} ]; then \
+      logger -t restic-backup -p user.warning "Stale lock detected for %i (age: ${LOCK_AGE}s), removing"; \
+      rm -f "${RESTIC_LOCK_FILE}"; \
+      restic unlock || true; \
+    else \
+      logger -t restic-backup -p user.error "Lock file exists for %i (age: ${LOCK_AGE}s < ${MAX_AGE}s), aborting"; \
+      exit 1; \
+    fi \
+  fi'
+
+# Create lock file
+ExecStartPre=/bin/bash -c 'touch "${RESTIC_LOCK_FILE}"'
+
+# Pre-backup hook
+ExecStartPre=/bin/bash -c 'if [ -x "${RESTIC_PRE_SCRIPT}" ]; then "${RESTIC_PRE_SCRIPT}"; fi'
+
+# Execute backup
+ExecStart=/bin/bash {{ restic_scripts_dir }}/backup-%i.sh
+
+# Post-backup hook (always run)
+ExecStopPost=/bin/bash -c 'if [ -x "${RESTIC_POST_SCRIPT}" ]; then "${RESTIC_POST_SCRIPT}" "$EXIT_STATUS"; fi'
+
+# Remove lock file (always)
+ExecStopPost=/bin/bash -c 'rm -f "${RESTIC_LOCK_FILE}"'
+
+# Send CheckMK status
+ExecStopPost=/bin/bash {{ restic_scripts_dir }}/checkmk-status.sh %i backup $EXIT_STATUS
+
+# Syslog on failure
+ExecStopPost=/bin/bash -c 'if [ "$EXIT_STATUS" != "0" ]; then logger -t restic-backup -p user.err "Backup failed for %i (exit: $EXIT_STATUS)"; fi'
+
+# Resource limits
+CPUQuota={{ restic_cpu_quota }}%
+IOWeight={{ restic_io_weight }}
+Nice={{ restic_nice_level }}
+
+# Security
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths={{ restic_config_dir }} {{ restic_lock_dir }} {{ restic_scripts_dir }} {{ restic_checkmk_spool_dir }} {% for source in restic_backup_sources %}{{ source.path }} {% endfor %}
+
+# Restart behavior
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,24 @@
+[Unit]
+Description=Timer for Restic Backup %i
+Documentation=https://restic.readthedocs.io/
+
+[Timer]
+# Run based on configuration
+{% if restic_timer_on_calendar %}
+OnCalendar={{ restic_timer_on_calendar }}
+{% else %}
+OnBootSec={{ restic_timer_on_boot_sec }}
+OnUnitActiveSec={{ restic_timer_interval }}
+{% endif %}
+
+# Persistent across reboots
+Persistent={{ restic_timer_persistent | lower }}
+
+# Randomize start time to avoid simultaneous backups
+RandomizedDelaySec={{ restic_timer_randomized_delay }}
+
+# Accuracy (allow timer to fire within this window)
+AccuracySec={{ restic_timer_accuracy }}
+
+[Install]
+WantedBy=timers.target
