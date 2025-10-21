@@ -1,0 +1,49 @@
+---
+# roles/restic/tasks/setup.yml
+# Create directories and deploy encryption credentials
+
+# ========================================
+# DIRECTORIES
+# ========================================
+
+- name: Create Restic directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "{{ item.mode }}"
+    owner: root
+    group: root
+  loop:
+    - { path: "{{ restic_config_dir }}", mode: '0700' }
+    - { path: "{{ restic_config_dir }}/passwords", mode: '0700' }
+    - { path: "{{ restic_scripts_dir }}", mode: '0755' }
+    - { path: "{{ restic_hooks_dir }}", mode: '0755' }
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Ensure Check_MK spool directory exists
+  ansible.builtin.file:
+    path: "{{ restic_checkmk_spool_dir }}"
+    state: directory
+    mode: '0755'
+  when: restic_enable_checkmk | bool
+
+- name: Create exclude file
+  ansible.builtin.copy:
+    dest: "{{ restic_config_dir }}/excludes.txt"
+    mode: '0644'
+    content: "{{ restic_backup_excludes | join('\n') }}\n"
+
+# ========================================
+# ENCRYPTION
+# ========================================
+
+- name: Deploy repository password file
+  ansible.builtin.copy:
+    dest: "{{ restic_config_dir }}/passwords/{{ restic_password_file }}"
+    content: "{{ restic_password }}"
+    mode: '0600'
+    owner: root
+    group: root
+  no_log: "{{ not restic_debug_mode }}"
+  when: restic_password | length > 0

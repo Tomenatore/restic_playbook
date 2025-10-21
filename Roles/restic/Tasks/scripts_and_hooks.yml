@@ -1,6 +1,69 @@
 ---
-# roles/restic/tasks/hooks.yml
-# Deploy pre/post backup hooks (uses Restic's native hook system)
+# roles/restic/tasks/scripts_and_hooks.yml
+# Deploy backup scripts, helper scripts, and pre/post backup hooks
+
+# ========================================
+# BACKUP AND MONITORING SCRIPTS
+# ========================================
+
+- name: Deploy CheckMK status script
+  ansible.builtin.template:
+    src: scripts/checkmk-status.sh.j2
+    dest: "{{ restic_scripts_dir }}/checkmk-status.sh"
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Deploy backup scripts for each source
+  ansible.builtin.template:
+    src: scripts/backup.sh.j2
+    dest: "{{ restic_scripts_dir }}/backup-{{ item.name }}.sh"
+    mode: '0755'
+    owner: root
+    group: root
+  loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Deploy scan scripts for each source
+  ansible.builtin.template:
+    src: scripts/scan.sh.j2
+    dest: "{{ restic_scripts_dir }}/scan-{{ item.name }}.sh"
+    mode: '0755'
+    owner: root
+    group: root
+  loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# ========================================
+# HELPER SCRIPTS
+# ========================================
+
+- name: Create helper scripts directory
+  ansible.builtin.file:
+    path: "{{ restic_helpers_dir }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Deploy helper scripts
+  ansible.builtin.template:
+    src: "scripts/{{ item }}.sh.j2"
+    dest: "{{ restic_helpers_dir }}/{{ item }}.sh"
+    mode: '0755'
+    owner: root
+    group: root
+  loop:
+    - restic-restore
+    - restic-repo-info
+  loop_control:
+    label: "{{ item }}"
+
+# ========================================
+# PRE/POST BACKUP HOOKS
+# ========================================
 #
 # Hooks use Restic's native hook system (RESTIC_PRE_SCRIPT, RESTIC_POST_SCRIPT)
 #
