@@ -67,48 +67,40 @@
 #
 # Note: Hooks are optional. If not present, backup runs without hooks.
 
-- name: Copy hooks from custom directory (pre and post)
-  ansible.builtin.copy:
-    src: "{{ restic_custom_hooks_dir }}/{{ item.1 }}-backup-{{ item.0.name }}.sh"
-    dest: "{{ item.0.hook_script_dir | default(restic_hooks_dir) }}/{{ item.1 }}-backup-{{ item.0.name }}.sh"
-    mode: '0755'
-    owner: root
-    group: root
-  loop: "{{ restic_backup_sources | selectattr('enabled') | list | product(['pre', 'post']) }}"
+- name: "Deploy {{ hook_type }} hooks for all sources"
+  loop:
+    - pre
+    - post
   loop_control:
-    label: "{{ item.1 }}-{{ item.0.name }}"
-  when:
-    - restic_custom_hooks_dir | length > 0
-    - (item.1 == 'pre' and item.0.hook_pre_script is not defined) or
-      (item.1 == 'post' and item.0.hook_post_script is not defined)
-  ignore_errors: yes  # Hook might not exist for this source
-
-- name: Copy per-source hook scripts (pre and post)
+    loop_var: hook_type
+    label: "{{ hook_type }} hooks"
   block:
-    - name: Copy per-source pre-backup hook scripts
+    - name: "Copy {{ hook_type }}-backup hooks from custom directory"
       ansible.builtin.copy:
-        src: "{{ item.hook_pre_script }}"
-        dest: "{{ item.hook_script_dir | default(restic_hooks_dir) }}/pre-backup-{{ item.name }}.sh"
+        src: "{{ restic_custom_hooks_dir }}/{{ hook_type }}-backup-{{ item.name }}.sh"
+        dest: "{{ item.hook_script_dir | default(restic_hooks_dir) }}/{{ hook_type }}-backup-{{ item.name }}.sh"
         mode: '0755'
         owner: root
         group: root
       loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
       loop_control:
-        label: "pre-{{ item.name }}"
+        label: "{{ hook_type }}-{{ item.name }}"
       when:
-        - item.hook_pre_script is defined
-        - item.hook_pre_script | length > 0
+        - restic_custom_hooks_dir | length > 0
+        - (hook_type == 'pre' and item.hook_pre_script is not defined) or
+          (hook_type == 'post' and item.hook_post_script is not defined)
+      ignore_errors: yes  # Hook might not exist for this source
 
-    - name: Copy per-source post-backup hook scripts
+    - name: "Copy {{ hook_type }}-backup per-source hook scripts"
       ansible.builtin.copy:
-        src: "{{ item.hook_post_script }}"
-        dest: "{{ item.hook_script_dir | default(restic_hooks_dir) }}/post-backup-{{ item.name }}.sh"
+        src: "{{ item['hook_' + hook_type + '_script'] }}"
+        dest: "{{ item.hook_script_dir | default(restic_hooks_dir) }}/{{ hook_type }}-backup-{{ item.name }}.sh"
         mode: '0755'
         owner: root
         group: root
       loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
       loop_control:
-        label: "post-{{ item.name }}"
+        label: "{{ hook_type }}-{{ item.name }}"
       when:
-        - item.hook_post_script is defined
-        - item.hook_post_script | length > 0
+        - item['hook_' + hook_type + '_script'] is defined
+        - item['hook_' + hook_type + '_script'] | length > 0
