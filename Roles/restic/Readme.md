@@ -30,8 +30,8 @@ Production-ready Ansible role for deploying Restic backups using systemd units a
 restic_backend_type: "s3"
 restic_s3_bucket: "my-backups"
 restic_s3_region: "eu-central-1"
-restic_s3_access_key: "{{ vault_aws_access_key }}"
-restic_s3_secret_key: "{{ vault_aws_secret_key }}"
+restic_s3_access_key: "{{ vault_s3_access_key }}"
+restic_s3_secret_key: "{{ vault_s3_secret_key }}"
 
 restic_playbook_password: "{{ vault_restic_playbook_password }}"
 restic_generic_password: "{{ vault_restic_generic_password }}"
@@ -308,8 +308,8 @@ cat /var/lib/check_mk_agent/spool/*_Restic_backup_*
 ```bash
 export RESTIC_REPOSITORY="s3:s3.eu-central-1.amazonaws.com/bucket/prefix"
 export RESTIC_PASSWORD_FILE="/etc/restic/passwords/playbook.key"
-export AWS_ACCESS_KEY_ID="..."
-export AWS_SECRET_ACCESS_KEY="..."
+export S3_ACCESS_KEY_ID="..."
+export S3_SECRET_ACCESS_KEY="..."
 
 restic snapshots
 restic stats

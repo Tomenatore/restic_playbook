@@ -32,8 +32,8 @@ restic_backend_type: "s3"  # s3, local, sftp, rest
 # S3 Backend (configure in group_vars or playbook)
 restic_s3_bucket: ""  # Example: "my-backup-bucket"
 restic_s3_region: ""  # Example: "eu-central-1"
-restic_s3_access_key: "{{ vault_aws_access_key | default('') }}"
-restic_s3_secret_key: "{{ vault_aws_secret_key | default('') }}"
+restic_s3_access_key: "{{ vault_s3_access_key | default('') }}"
+restic_s3_secret_key: "{{ vault_s3_secret_key | default('') }}"
 restic_s3_endpoint: ""  # Empty for AWS, or custom endpoint (MinIO, Wasabi, etc.)
 restic_s3_prefix: ""  # Optional path prefix in bucket, e.g. "restic"
 
