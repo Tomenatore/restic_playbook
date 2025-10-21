@@ -585,6 +585,20 @@ restic_backup_sources:
 | `restic_retention_keep_monthly` | `12` |
 | `restic_retention_keep_yearly` | `5` |
 
+### Lock & Retry Management
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `restic_lock_max_age_hours` | `12` | Stale lock threshold for cleanup |
+| `restic_retry_lock_duration` | `5m` | Wait time for locks (backup) |
+| `restic_restart_sec` | `15min` | Wait between systemd retries |
+| `restic_restart_max_attempts` | `0` | Max retries (0=unlimited) |
+| `restic_backup_timeout_seconds` | `0` | Backup timeout (0=unlimited) |
+| `restic_check_read_data` | `false` | Full data verification |
+| `restic_check_read_data_subset` | `""` | Partial check ("1/12", "10%") |
+
+**Note**: Prune/Check/Scan use `--retry-lock 30s` (hardcoded, lower priority than backup).
+
 ### Performance
 
 | Variable | Default | Description |

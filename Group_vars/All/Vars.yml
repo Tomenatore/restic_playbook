@@ -15,8 +15,8 @@ restic_s3_endpoint: ""  # Empty for AWS, or "https://minio.example.com" for MinI
 restic_s3_prefix: "restic"
 
 # Credentials from vault
-restic_s3_access_key: "{{ vault_aws_access_key }}"
-restic_s3_secret_key: "{{ vault_aws_secret_key }}"
+restic_s3_access_key: "{{ vault_s3_access_key }}"
+restic_s3_secret_key: "{{ vault_s3_secret_key }}"
 
 # Local Backend (Alternative)
 # restic_backend_type: "local"
@@ -119,10 +119,26 @@ restic_retention_keep_yearly: 5
 # RESTIC LOCK MANAGEMENT
 # ========================================
 
-# NOTE: Restic uses native locks with 30-minute staleness threshold
-# Locks are automatically cleaned up before each operation
-# The retry_lock_duration allows backups to wait if repository is temporarily locked
-restic_retry_lock_duration: "5m"  # How long to wait for locks (0 = don't wait)
+# Stale lock detection threshold (crash recovery)
+# Locks older than this threshold are removed before operations
+# Locks younger than this pass through to --retry-lock mechanism
+restic_lock_max_age_hours: 12         # Default: 12 hours
+
+# Retry-lock duration (short-term wait for concurrent operations)
+restic_retry_lock_duration: "5m"      # Backup operations wait up to 5 minutes
+# Prune/Check/Scan use 30s (hardcoded for lower priority)
+
+# Systemd restart configuration (long-term retry on failure)
+# Services automatically retry when failing due to locked repository
+restic_restart_sec: "15min"           # Wait between retry attempts
+restic_restart_max_attempts: 0        # 0 = unlimited retries until success
+
+# Backup timeout (0 = unlimited, recommended for large backups)
+restic_backup_timeout_seconds: 0      # Per-source override: timeout_seconds
+
+# Repository integrity check configuration
+restic_check_read_data: false         # Full data verification (slow)
+restic_check_read_data_subset: ""     # Partial check: "1/12", "10%", or "50M"
 
 # ========================================
 # MONITORING
