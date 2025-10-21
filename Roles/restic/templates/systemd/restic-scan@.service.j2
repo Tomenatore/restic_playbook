@@ -21,7 +21,7 @@ Environment="S3_DEFAULT_REGION={{ restic_s3_region }}"
 # CheckMK Custom Tag
 Environment="CHECKMK_TAG=restic_scan_%i"
 
-# Intelligent lock check - only unlock if lock exists AND is stale
+# Intelligent lock check - only unlock stale locks, let --retry-lock handle fresh locks
 {% set lock_max_age = item.lock_max_age_hours | default(restic_lock_max_age_hours) %}
 ExecStartPre=/bin/bash -c ' \
   MAX_AGE_SECONDS=$(({{ lock_max_age }} * 3600)); \
@@ -39,8 +39,7 @@ ExecStartPre=/bin/bash -c ' \
           logger -t restic-scan -p user.warning "Removing stale lock for %i (age: ${LOCK_AGE}s > ${MAX_AGE_SECONDS}s)"; \
           restic unlock || true; \
         else \
-          logger -t restic-scan -p user.error "Lock for %i exists (age: ${LOCK_AGE}s < ${MAX_AGE_SECONDS}s), aborting - will retry later"; \
-          exit 1; \
+          logger -t restic-scan -p user.info "Lock for %i exists (age: ${LOCK_AGE}s), will use --retry-lock to wait"; \
         fi; \
       fi; \
     fi; \
