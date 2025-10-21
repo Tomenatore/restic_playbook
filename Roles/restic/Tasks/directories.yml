@@ -26,14 +26,6 @@
     owner: root
     group: root
 
-- name: Create Restic lock directory
-  ansible.builtin.file:
-    path: "{{ restic_lock_dir }}"
-    state: directory
-    mode: '0755'
-    owner: root
-    group: root
-
 - name: Create Restic hooks directory
   ansible.builtin.file:
     path: "{{ restic_hooks_dir }}"

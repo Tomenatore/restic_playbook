@@ -54,11 +54,9 @@ restic_backup_sources:
     path: "/var/backups"
     tags: ["dumps", "database"]
     enabled: true
-    # Example: Database backup with hooks
-    # pre_backup_commands:
-    #   - "mysqldump --all-databases > /var/backups/mysql-all.sql"
-    # post_backup_commands:
-    #   - "rm -f /var/backups/mysql-all.sql"
+    # Example: Database backup with hooks (see hooks/pre-backup-example.sh)
+    # hook_pre_script: "{{ playbook_dir }}/hooks/pre-backup-var-backups.sh"
+    # hook_post_script: "{{ playbook_dir }}/hooks/post-backup-var-backups.sh"
 
   # - name: "home"
   #   path: "/home"
@@ -118,11 +116,13 @@ restic_retention_keep_monthly: 12
 restic_retention_keep_yearly: 5
 
 # ========================================
-# LOCK FILE MANAGEMENT
+# RESTIC LOCK MANAGEMENT
 # ========================================
 
-# Maximum age of lock file in hours before it's considered stale
-restic_lock_max_age_hours: 12
+# NOTE: Restic uses native locks with 30-minute staleness threshold
+# Locks are automatically cleaned up before each operation
+# The retry_lock_duration allows backups to wait if repository is temporarily locked
+restic_retry_lock_duration: "5m"  # How long to wait for locks (0 = don't wait)
 
 # ========================================
 # MONITORING

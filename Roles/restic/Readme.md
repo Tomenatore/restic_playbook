@@ -74,17 +74,15 @@ journalctl -u 'restic-backup@*' -f
 ├── passwords/
 │   ├── generic.key
 │   └── playbook.key
+├── hooks/
+│   ├── pre-backup-<source>.sh
+│   └── post-backup-<source>.sh
 └── excludes.txt
 
 /usr/local/bin/restic/
 ├── backup-<source>.sh
 ├── scan-<source>.sh
-├── pre-backup-<source>.sh
-├── post-backup-<source>.sh
 └── checkmk-status.sh
-
-/var/run/restic/
-└── <source>.lock
 ```
 
 ## 2-Key Encryption
@@ -96,10 +94,12 @@ Use `restic_use_playbook_key: false` to switch to generic key.
 
 ## Lock Management
 
-Automatically handles stale locks:
-- Locks older than `restic_lock_max_age_hours` (default: 12h) are removed
-- `restic unlock` is called automatically
-- Fresh locks abort the job to prevent conflicts
+Uses **Restic's native repository locks** with automatic stale lock cleanup:
+- `restic unlock` is called before each operation to remove stale locks (>30 minutes)
+- `--retry-lock 5m` (configurable) allows backup to wait if repository is temporarily locked
+- No additional systemd-level lock files needed
+- Lock behavior follows Restic's built-in 30-minute staleness threshold
+- Per-source `retry_lock_duration` override available for custom wait times
 
 ## Pre/Post-Backup Hooks
 
@@ -229,14 +229,16 @@ systemctl disable restic-backup@var-www.timer
 
 ```yaml
 restic_backup_sources:
-  - name: "identifier"          # Required: alphanumeric + hyphens
-    path: "/path/to/backup"     # Required
-    tags: ["tag1", "tag2"]      # Optional
-    enabled: true               # Optional
-    pre_backup_commands: []     # Optional
-    post_backup_commands: []    # Optional
-    stop_services: []           # Optional
-    start_services: []          # Optional
+  - name: "identifier"                    # Required: alphanumeric + hyphens
+    path: "/path/to/backup"               # Required
+    tags: ["tag1", "tag2"]                # Optional
+    enabled: true                         # Optional
+    timeout_seconds: 7200                 # Optional: backup timeout (0 = unlimited)
+    lock_max_age_hours: 12                # Optional: stale lock threshold
+    retry_lock_duration: "5m"             # Optional: wait duration if locked
+    hook_pre_script: "path/to/pre.sh"     # Optional: pre-backup hook script
+    hook_post_script: "path/to/post.sh"   # Optional: post-backup hook script
+    hook_script_dir: "/etc/restic/hooks"  # Optional: hooks directory
 ```
 
 ### Timers

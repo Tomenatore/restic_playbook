@@ -54,19 +54,13 @@ restic_backup_sources:
     path: "/var/www"
     tags: ["web", "production"]
     enabled: true
-    # Optional: Pre-backup commands
-    pre_backup_commands: []
-    # Optional: Post-backup commands
-    post_backup_commands: []
-    # Optional: Services to stop before backup
-    stop_services: []
-    # Optional: Services to start after backup
-    start_services: []
-    # Optional: Database dump configuration
-    # database_dump:
-    #   enabled: true
-    #   type: "mysql"  # mysql or postgresql
-    #   options: "--all-databases --single-transaction"
+    # Optional per-source settings:
+    # timeout_seconds: 7200  # Override default backup timeout
+    # lock_max_age_hours: 12  # Override default stale lock threshold
+    # retry_lock_duration: "5m"  # Override default retry-lock duration
+    # hook_pre_script: "{{ playbook_dir }}/hooks/pre-backup-var-www.sh"
+    # hook_post_script: "{{ playbook_dir }}/hooks/post-backup-var-www.sh"
+    # hook_script_dir: "/etc/restic/hooks"  # Override default hooks directory
 
   - name: "etc"
     path: "/etc"
@@ -130,6 +124,7 @@ restic_check_timer_on_calendar: "weekly"
 restic_check_timer_on_boot_sec: "1h"
 restic_check_timer_interval: "7d"
 restic_check_read_data: false  # Set to true for full data integrity check (slower)
+restic_check_read_data_subset: ""  # Example: "1/12" (check 1/12 of data), "10%" (10% random), "50M" (50 MiB)
 
 # Scan timer settings
 restic_scan_timer_on_calendar: "daily"
@@ -152,6 +147,12 @@ restic_cpu_quota: 80  # Percentage (100 = 1 core)
 restic_io_weight: 100  # 1-10000, default 100
 restic_nice_level: 10  # -20 to 19, higher = lower priority
 
+# Backup timeout (0 = unlimited, systemd default)
+restic_backup_timeout_seconds: 0  # Override per source with timeout_seconds
+
+# Retry lock duration (wait if repository is locked)
+restic_retry_lock_duration: "5m"  # Override per source with retry_lock_duration
+
 # ========================================
 # RETENTION POLICY
 # ========================================
@@ -164,14 +165,14 @@ restic_retention_keep_monthly: 12
 restic_retention_keep_yearly: 5
 
 # ========================================
-# LOCK FILE MANAGEMENT
+# RESTIC LOCK MANAGEMENT
 # ========================================
 
-# Maximum age of lock file in hours before it's considered stale
-restic_lock_max_age_hours: 12
-
-# Lock directory
-restic_lock_dir: "/var/run/restic"
+# NOTE: Restic uses native repository locks with a fixed 30-minute staleness threshold
+# The 'restic unlock' command automatically removes locks older than 30 minutes
+# This variable is kept for documentation purposes only
+# Restic's --retry-lock flag (configured above) handles temporary locks automatically
+restic_lock_max_age_hours: 12  # Informational only - Restic uses 30 minutes internally
 
 # ========================================
 # DIRECTORIES

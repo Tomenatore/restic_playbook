@@ -220,8 +220,9 @@ post_backup_tasks_file: "{{ playbook_dir }}/tasks/post_backup_tasks.yml"
 **Create `tasks/pre_backup_tasks.yml`:**
 ```yaml
 ---
-- name: Include stop services tasks
-  ansible.builtin.include_tasks: stop_services.yml
+# NOTE: This guide is outdated and refers to the old pre-systemd implementation
+# For the current systemd-based implementation, use Restic hooks instead
+# See hooks/pre-backup-example.sh for hook-based examples
 
 - name: Include database backup tasks
   ansible.builtin.include_tasks: db_backup.yml
