@@ -21,33 +21,12 @@ Environment="AWS_DEFAULT_REGION={{ restic_s3_region }}"
 # CheckMK Custom Tag
 Environment="CHECKMK_TAG=restic_scan_%i"
 
-# Lock file settings
-Environment="RESTIC_LOCK_FILE={{ restic_lock_dir }}/scan-%i.lock"
-Environment="RESTIC_LOCK_MAX_AGE_HOURS={{ restic_lock_max_age_hours }}"
-
-# Unlock mechanism
-ExecStartPre=/bin/bash -c ' \
-  if [ -f "${RESTIC_LOCK_FILE}" ]; then \
-    LOCK_AGE=$(($(date +%%s) - $(stat -c %%Y "${RESTIC_LOCK_FILE}"))); \
-    MAX_AGE=$((${RESTIC_LOCK_MAX_AGE_HOURS} * 3600)); \
-    if [ ${LOCK_AGE} -gt ${MAX_AGE} ]; then \
-      logger -t restic-scan -p user.warning "Stale lock detected for %i, removing"; \
-      rm -f "${RESTIC_LOCK_FILE}"; \
-      restic unlock || true; \
-    else \
-      logger -t restic-scan -p user.error "Lock file exists for %i, aborting"; \
-      exit 1; \
-    fi \
-  fi'
-
-# Create lock file
-ExecStartPre=/bin/bash -c 'touch "${RESTIC_LOCK_FILE}"'
+# Restic native lock cleanup (remove stale repository locks)
+# Restic's unlock command removes locks older than 30 minutes
+ExecStartPre=/bin/bash -c 'restic unlock || true'
 
 # Execute snapshot scan and save stats
 ExecStart=/bin/bash {{ restic_scripts_dir }}/scan-%i.sh
-
-# Remove lock file
-ExecStopPost=/bin/bash -c 'rm -f "${RESTIC_LOCK_FILE}"'
 
 # Send CheckMK status
 ExecStopPost=/bin/bash {{ restic_scripts_dir }}/checkmk-status.sh %i scan $EXIT_STATUS
@@ -68,7 +47,7 @@ Nice={{ restic_nice_level }}
 # Security
 PrivateTmp=yes
 ProtectSystem=strict
-ReadWritePaths={{ restic_config_dir }} {{ restic_lock_dir }} {{ restic_checkmk_spool_dir }}
+ReadWritePaths={{ restic_config_dir }} {{ restic_checkmk_spool_dir }}
 
 [Install]
 WantedBy=multi-user.target

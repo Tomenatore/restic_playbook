@@ -1,0 +1,23 @@
+---
+# roles/restic/tasks/backend.yml
+# Configure backup backend (S3, local, etc.)
+
+- name: Build S3 repository URL
+  ansible.builtin.set_fact:
+    restic_repository: "s3:{% if restic_s3_endpoint %}{{ restic_s3_endpoint }}{% else %}s3.{{ restic_s3_region }}.amazonaws.com{% endif %}/{{ restic_s3_bucket }}{% if restic_s3_prefix %}/{{ restic_s3_prefix }}{% endif %}"
+  when: restic_backend_type == "s3"
+  no_log: "{{ not restic_debug_mode }}"
+
+- name: Ensure local backup directory exists
+  ansible.builtin.file:
+    path: "{{ restic_local_path }}"
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+  when: restic_backend_type == "local"
+
+- name: Build local repository URL
+  ansible.builtin.set_fact:
+    restic_repository: "{{ restic_local_path }}"
+  when: restic_backend_type == "local"

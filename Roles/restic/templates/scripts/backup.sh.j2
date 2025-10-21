@@ -59,6 +59,12 @@ RESTIC_CMD="${RESTIC_CMD} --limit-upload {{ restic_upload_limit_kbps }}"
 RESTIC_CMD="${RESTIC_CMD} --limit-download {{ restic_download_limit_kbps }}"
 {% endif %}
 
+# Add retry lock (wait if repository is locked)
+{% set retry_lock = item.retry_lock_duration | default(restic_retry_lock_duration) %}
+{% if retry_lock | length > 0 %}
+RESTIC_CMD="${RESTIC_CMD} --retry-lock {{ retry_lock }}"
+{% endif %}
+
 # Add JSON output
 RESTIC_CMD="${RESTIC_CMD} --json"
 

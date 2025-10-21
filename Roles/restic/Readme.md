@@ -74,17 +74,15 @@ journalctl -u 'restic-backup@*' -f
 ├── passwords/
 │   ├── generic.key
 │   └── playbook.key
+├── hooks/
+│   ├── pre-backup-<source>.sh
+│   └── post-backup-<source>.sh
 └── excludes.txt
 
 /usr/local/bin/restic/
 ├── backup-<source>.sh
 ├── scan-<source>.sh
-├── pre-backup-<source>.sh
-├── post-backup-<source>.sh
 └── checkmk-status.sh
-
-/var/run/restic/
-└── <source>.lock
 ```
 
 ## 2-Key Encryption
@@ -96,37 +94,91 @@ Use `restic_use_playbook_key: false` to switch to generic key.
 
 ## Lock Management
 
-Automatically handles stale locks:
-- Locks older than `restic_lock_max_age_hours` (default: 12h) are removed
-- `restic unlock` is called automatically
-- Fresh locks abort the job to prevent conflicts
+Uses **Restic's native repository locks** with automatic stale lock cleanup:
+- `restic unlock` is called before each operation to remove stale locks (>30 minutes)
+- `--retry-lock 5m` (configurable) allows backup to wait if repository is temporarily locked
+- No additional systemd-level lock files needed
+- Lock behavior follows Restic's built-in 30-minute staleness threshold
+- Per-source `retry_lock_duration` override available for custom wait times
 
 ## Pre/Post-Backup Hooks
 
-Configure hooks per source:
+Uses Restic's **native hook system** (`RESTIC_PRE_SCRIPT`, `RESTIC_POST_SCRIPT`). Restic automatically calls these scripts before/after backup.
+
+**Hooks are optional** - if not present, backup runs without hooks.
+
+### Example Hook Scripts
+
+See `hooks/pre-backup-example.sh` and `hooks/post-backup-example.sh` in the playbook directory for comprehensive examples with:
+- Database dumps
+- Service management
+- LVM snapshots
+- Docker containers
+- And more...
+
+### Option 1: Global Hooks Directory
+
+Create hooks in your playbook directory:
+
+```bash
+your-playbook/
+  hooks/
+    pre-backup-database.sh    # For source "database"
+    post-backup-database.sh
+    pre-backup-files.sh       # For source "files"
+    post-backup-files.sh
+```
+
+Configure role to copy them:
+
+```yaml
+restic_custom_hooks_dir: "{{ playbook_dir }}/hooks"
+```
+
+Role copies `pre-backup-<source>.sh` and `post-backup-<source>.sh` to target hosts.
+
+### Option 2: Per-Source Hook Scripts
+
+Specify hook scripts per source:
 
 ```yaml
 restic_backup_sources:
   - name: "database"
     path: "/var/lib/postgresql"
     enabled: true
+    hook_pre_script: "{{ playbook_dir }}/scripts/db-pre-backup.sh"
+    hook_post_script: "{{ playbook_dir }}/scripts/db-post-backup.sh"
 
-    pre_backup_commands:
-      - "pg_dumpall > /var/backups/db.sql"
-
-    post_backup_commands:
-      - "rm -f /var/backups/db.sql"
-
-    stop_services:
-      - postgresql
-
-    start_services:
-      - postgresql
+  - name: "files"
+    path: "/var/files"
+    enabled: true
+    hook_pre_script: "{{ playbook_dir }}/scripts/files-pre.sh"
+    # No post-hook for this source
 ```
 
-Hooks execute via:
-- **Pre**: `ExecStartPre` in systemd unit
-- **Post**: `ExecStopPost` (always runs)
+Allows different hook scripts per source with custom naming.
+
+### Option 3: Manual Hook Management
+
+Create hooks directly on target hosts:
+
+```bash
+# On target host
+mkdir -p /etc/restic/hooks
+vi /etc/restic/hooks/pre-backup-database.sh
+vi /etc/restic/hooks/post-backup-database.sh
+chmod +x /etc/restic/hooks/*.sh
+```
+
+No Ansible configuration needed - just create the hooks manually.
+
+### Hook Script Requirements
+
+- **Pre-hook**: Exit code 0 = continue, non-zero = abort backup
+- **Post-hook**: Receives backup exit status as `$1`
+- **Executable**: Scripts must have execute permission (`chmod +x`)
+- **Naming**: `pre-backup-<source-name>.sh`, `post-backup-<source-name>.sh`
+- **Location**: `/etc/restic/hooks/` (default, configurable via `restic_hooks_dir`)
 
 ## CheckMK Integration
 
@@ -177,14 +229,16 @@ systemctl disable restic-backup@var-www.timer
 
 ```yaml
 restic_backup_sources:
-  - name: "identifier"          # Required: alphanumeric + hyphens
-    path: "/path/to/backup"     # Required
-    tags: ["tag1", "tag2"]      # Optional
-    enabled: true               # Optional
-    pre_backup_commands: []     # Optional
-    post_backup_commands: []    # Optional
-    stop_services: []           # Optional
-    start_services: []          # Optional
+  - name: "identifier"                    # Required: alphanumeric + hyphens
+    path: "/path/to/backup"               # Required
+    tags: ["tag1", "tag2"]                # Optional
+    enabled: true                         # Optional
+    timeout_seconds: 7200                 # Optional: backup timeout (0 = unlimited)
+    lock_max_age_hours: 12                # Optional: stale lock threshold
+    retry_lock_duration: "5m"             # Optional: wait duration if locked
+    hook_pre_script: "path/to/pre.sh"     # Optional: pre-backup hook script
+    hook_post_script: "path/to/post.sh"   # Optional: post-backup hook script
+    hook_script_dir: "/etc/restic/hooks"  # Optional: hooks directory
 ```
 
 ### Timers

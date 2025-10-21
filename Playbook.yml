@@ -76,21 +76,20 @@
 # PRE/POST BACKUP HOOKS
 # ========================================
 #
-# Configure hooks in restic_backup_sources:
+# Uses Restic's native hook system (RESTIC_PRE_SCRIPT, RESTIC_POST_SCRIPT)
+# See hooks/pre-backup-example.sh and hooks/post-backup-example.sh for examples
 #
-# restic_backup_sources:
-#   - name: "database-server"
-#     path: "/var/lib/postgresql"
-#     tags: ["database", "postgres"]
-#     enabled: true
-#     pre_backup_commands:
-#       - "pg_dump dbname > /var/backups/dbname.sql"
-#     post_backup_commands:
-#       - "rm -f /var/backups/dbname.sql"
-#     stop_services:
-#       - postgresql
-#     start_services:
-#       - postgresql
+# Option 1: Global hooks directory
+#   restic_custom_hooks_dir: "{{ playbook_dir }}/hooks"
+#   (Creates hooks: pre-backup-<source>.sh, post-backup-<source>.sh)
 #
-# Hooks are executed as shell scripts via systemd ExecStartPre/ExecStopPost
+# Option 2: Per-source hook scripts
+#   restic_backup_sources:
+#     - name: "database"
+#       path: "/var/lib/postgresql"
+#       hook_pre_script: "{{ playbook_dir }}/hooks/db-pre-backup.sh"
+#       hook_post_script: "{{ playbook_dir }}/hooks/db-post-backup.sh"
+#
+# Option 3: Manual management
+#   Create hooks directly on target hosts in /etc/restic/hooks/
 #

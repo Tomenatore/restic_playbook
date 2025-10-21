@@ -1,0 +1,41 @@
+---
+# roles/restic/tasks/repository.yml
+# Initialize Restic repository
+
+- name: Set environment for repository operations
+  ansible.builtin.set_fact:
+    restic_env:
+      RESTIC_REPOSITORY: "{{ restic_repository }}"
+      RESTIC_PASSWORD_FILE: "{{ restic_config_dir }}/passwords/{% if restic_use_playbook_key %}{{ restic_playbook_password_file }}{% else %}{{ restic_generic_password_file }}{% endif %}"
+      {% if restic_backend_type == "s3" %}
+      AWS_ACCESS_KEY_ID: "{{ restic_s3_access_key }}"
+      AWS_SECRET_ACCESS_KEY: "{{ restic_s3_secret_key }}"
+      AWS_DEFAULT_REGION: "{{ restic_s3_region }}"
+      {% endif %}
+  no_log: "{{ not restic_debug_mode }}"
+
+- name: Check if repository exists
+  ansible.builtin.shell:
+    cmd: restic snapshots
+  environment: "{{ restic_env }}"
+  register: restic_repo_check
+  failed_when: false
+  changed_when: false
+  no_log: "{{ not restic_debug_mode }}"
+
+- name: Initialize repository if not exists
+  ansible.builtin.command:
+    cmd: restic init
+  environment: "{{ restic_env }}"
+  when: restic_repo_check.rc != 0
+  register: restic_repo_init
+  failed_when:
+    - restic_repo_init.rc != 0
+    - "'already initialized' not in restic_repo_init.stderr"
+  changed_when: "'created restic repository' in restic_repo_init.stdout or 'created restic repository' in restic_repo_init.stderr"
+  no_log: "{{ not restic_debug_mode }}"
+
+- name: Confirm repository status
+  ansible.builtin.debug:
+    msg: "Repository {{ restic_repository }} is ready"
+  when: restic_repo_check.rc == 0 or (restic_repo_init is defined and restic_repo_init is changed)
