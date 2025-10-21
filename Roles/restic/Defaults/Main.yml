@@ -26,18 +26,18 @@ restic_use_playbook_key: true
 
 restic_backend_type: "s3"  # s3, local, sftp, rest
 
-# S3 Backend
-restic_s3_bucket: "my-backup-bucket"
-restic_s3_region: "eu-central-1"
+# S3 Backend (configure in group_vars or playbook)
+restic_s3_bucket: ""  # Example: "my-backup-bucket"
+restic_s3_region: ""  # Example: "eu-central-1"
 restic_s3_access_key: "{{ vault_aws_access_key | default('') }}"
 restic_s3_secret_key: "{{ vault_aws_secret_key | default('') }}"
 restic_s3_endpoint: ""  # Empty for AWS, or custom endpoint (MinIO, Wasabi, etc.)
-restic_s3_prefix: "restic"  # Optional path prefix in bucket
+restic_s3_prefix: ""  # Optional path prefix in bucket, e.g. "restic"
 
-# Local Backend
-restic_local_path: "/mnt/backup/restic-repo"
+# Local Backend (configure in group_vars or playbook)
+restic_local_path: ""  # Example: "/mnt/backup/restic-repo"
 
-# SFTP Backend
+# SFTP Backend (configure in group_vars or playbook)
 restic_sftp_host: ""
 restic_sftp_user: ""
 restic_sftp_path: ""
@@ -49,28 +49,32 @@ restic_repository: ""
 # BACKUP SOURCES
 # ========================================
 
-restic_backup_sources:
-  - name: "var-www"
-    path: "/var/www"
-    tags: ["web", "production"]
-    enabled: true
-    # Optional per-source settings:
-    # timeout_seconds: 7200  # Override default backup timeout
-    # lock_max_age_hours: 12  # Override default stale lock threshold
-    # retry_lock_duration: "5m"  # Override default retry-lock duration
-    # hook_pre_script: "{{ playbook_dir }}/hooks/pre-backup-var-www.sh"
-    # hook_post_script: "{{ playbook_dir }}/hooks/post-backup-var-www.sh"
-    # hook_script_dir: "/etc/restic/hooks"  # Override default hooks directory
+# Define backup sources in group_vars or playbook
+# Empty by default - role is generic and requires configuration
+restic_backup_sources: []
 
-  - name: "etc"
-    path: "/etc"
-    tags: ["config", "system"]
-    enabled: true
-
-  # - name: "home"
-  #   path: "/home"
-  #   tags: ["userdata"]
-  #   enabled: false
+# Example configuration:
+# restic_backup_sources:
+#   - name: "var-www"
+#     path: "/var/www"
+#     tags: ["web", "production"]
+#     enabled: true
+#     # Optional per-source settings:
+#     # timeout_seconds: 7200  # Override default backup timeout
+#     # retry_lock_duration: "5m"  # Override default retry-lock duration
+#     # hook_pre_script: "{{ playbook_dir }}/hooks/pre-backup-var-www.sh"
+#     # hook_post_script: "{{ playbook_dir }}/hooks/post-backup-var-www.sh"
+#     # hook_script_dir: "/etc/restic/hooks"  # Override default hooks directory
+#
+#   - name: "etc"
+#     path: "/etc"
+#     tags: ["config", "system"]
+#     enabled: true
+#
+#   - name: "home"
+#     path: "/home"
+#     tags: ["userdata"]
+#     enabled: false
 
 # ========================================
 # EXCLUSIONS
