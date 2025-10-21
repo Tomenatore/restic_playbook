@@ -308,8 +308,8 @@ cat /var/lib/check_mk_agent/spool/*_Restic_backup_*
 ```bash
 export RESTIC_REPOSITORY="s3:s3.eu-central-1.amazonaws.com/bucket/prefix"
 export RESTIC_PASSWORD_FILE="/etc/restic/passwords/playbook.key"
-export S3_ACCESS_KEY_ID="..."
-export S3_SECRET_ACCESS_KEY="..."
+export AWS_ACCESS_KEY_ID="..."
+export AWS_SECRET_ACCESS_KEY="..."
 
 restic snapshots
 restic stats
