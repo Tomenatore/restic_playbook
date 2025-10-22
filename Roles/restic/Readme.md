@@ -43,9 +43,9 @@ Production-ready Ansible role for deploying Restic backups using systemd units a
 └── excludes.txt                # Backup exclusion patterns
 
 /usr/local/bin/restic/
-├── backup-<source>.sh          # Backup script per source
-├── scan-<source>.sh            # Statistics collection script
-└── checkmk-status.sh           # CheckMK integration script
+├── restic-backup-<source>.sh   # Backup script per source
+├── restic-scan-<source>.sh     # Statistics collection script
+└── restic-checkmk-status.sh    # CheckMK integration script
 
 /opt/restic/
 ├── restic-restore.sh           # Helper script for restore operations

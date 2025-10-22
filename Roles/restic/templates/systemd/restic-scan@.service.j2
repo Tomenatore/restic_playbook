@@ -46,10 +46,10 @@ ExecStartPre=/bin/bash -c ' \
   fi'
 
 # Execute snapshot scan and save stats
-ExecStart=/bin/bash {{ restic_scripts_dir }}/scan-%i.sh
+ExecStart=/bin/bash {{ restic_scripts_dir }}/restic-scan-%i.sh
 
 # Send CheckMK status
-ExecStopPost=/bin/bash {{ restic_scripts_dir }}/checkmk-status.sh %i scan $EXIT_STATUS
+ExecStopPost=/bin/bash {{ restic_scripts_dir }}/restic-checkmk-status.sh %i scan $EXIT_STATUS
 
 # Syslog
 ExecStopPost=/bin/bash -c ' \

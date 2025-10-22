@@ -24,8 +24,8 @@ Environment="RESTIC_LIMIT_DOWNLOAD={{ restic_download_limit_kbps }}"
 # Restic Hooks (native hook system)
 # Restic automatically calls these scripts before/after backup
 {% set hook_dir = item.hook_script_dir | default(restic_hooks_dir) %}
-Environment="RESTIC_PRE_SCRIPT={{ hook_dir }}/pre-backup-%i.sh"
-Environment="RESTIC_POST_SCRIPT={{ hook_dir }}/post-backup-%i.sh"
+Environment="RESTIC_PRE_SCRIPT={{ hook_dir }}/pre-restic-backup-%i.sh"
+Environment="RESTIC_POST_SCRIPT={{ hook_dir }}/post-restic-backup-%i.sh"
 
 # CheckMK Custom Tag
 Environment="CHECKMK_TAG=restic_backup_%i"
@@ -56,10 +56,10 @@ ExecStartPre=/bin/bash -c ' \
 
 # Execute backup (restic will call pre/post hooks automatically)
 TimeoutStartSec={{ item.timeout_seconds | default(restic_backup_timeout_seconds) }}
-ExecStart=/bin/bash {{ restic_scripts_dir }}/backup-%i.sh
+ExecStart=/bin/bash {{ restic_scripts_dir }}/restic-backup-%i.sh
 
 # Send CheckMK status
-ExecStopPost=/bin/bash {{ restic_scripts_dir }}/checkmk-status.sh %i backup $EXIT_STATUS
+ExecStopPost=/bin/bash {{ restic_scripts_dir }}/restic-checkmk-status.sh %i backup $EXIT_STATUS
 
 # Syslog on failure
 ExecStopPost=/bin/bash -c 'if [ "$EXIT_STATUS" != "0" ]; then logger -t restic-backup -p user.err "Backup failed for %i (exit: $EXIT_STATUS)"; fi'
