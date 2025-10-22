@@ -55,7 +55,7 @@ ExecStart=/usr/bin/restic check --retry-lock 30s
 {% endif %}
 
 # Send CheckMK status
-ExecStopPost=/bin/bash {{ restic_scripts_dir }}/checkmk-status.sh %i check $EXIT_STATUS
+ExecStopPost=/bin/bash {{ restic_scripts_dir }}/restic-checkmk-status.sh %i check $EXIT_STATUS
 
 # Syslog
 ExecStopPost=/bin/bash -c ' \

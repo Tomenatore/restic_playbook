@@ -8,16 +8,16 @@
 
 - name: Deploy CheckMK status script
   ansible.builtin.template:
-    src: scripts/checkmk-status.sh.j2
-    dest: "{{ restic_scripts_dir }}/checkmk-status.sh"
+    src: scripts/restic-checkmk-status.sh.j2
+    dest: "{{ restic_scripts_dir }}/restic-checkmk-status.sh"
     mode: '0755'
     owner: root
     group: root
 
 - name: Deploy backup and scan scripts for each source
   ansible.builtin.template:
-    src: "scripts/{{ item.1 }}.sh.j2"
-    dest: "{{ restic_scripts_dir }}/{{ item.1 }}-{{ item.0.name }}.sh"
+    src: "scripts/restic-{{ item.1 }}.sh.j2"
+    dest: "{{ restic_scripts_dir }}/restic-{{ item.1 }}-{{ item.0.name }}.sh"
     mode: '0755'
     owner: root
     group: root
