@@ -36,7 +36,7 @@ RESTIC_CMD="restic backup ${SOURCE_PATH} \
 
 # Add user tags
 for TAG in ${SOURCE_TAGS}; do
-    RESTIC_CMD="${RESTIC_CMD} --tag ${TAG}"
+    RESTIC_CMD="${RESTIC_CMD} --tag \"${TAG}\""
 done
 
 # Add force rescan if configured globally

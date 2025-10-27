@@ -10,6 +10,17 @@
 # - Lock management with stale lock detection and automatic retry
 
 # ========================================
+# VALIDATION
+# ========================================
+
+- name: Validate configuration
+  ansible.builtin.include_tasks: validate.yml
+  tags:
+    - restic
+    - validate
+    - always
+
+# ========================================
 # INSTALLATION
 # ========================================
 

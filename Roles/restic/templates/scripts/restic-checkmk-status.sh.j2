@@ -28,30 +28,9 @@ else
     MESSAGE="${JOB_TYPE} FAILED for ${SOURCE_NAME} (exit: ${EXIT_STATUS})"
 fi
 
-# Additional metrics based on job type
-METRICS=""
-case "${JOB_TYPE}" in
-    backup)
-        STATS_FILE="{{ restic_config_dir }}/stats-${SOURCE_NAME}.json"
-        if [ -f "${STATS_FILE}" ]; then
-            TOTAL_SIZE=$(jq -r '.total_size // 0' "${STATS_FILE}")
-            TOTAL_FILES=$(jq -r '.total_file_count // 0' "${STATS_FILE}")
-            METRICS=" | size=${TOTAL_SIZE}B files=${TOTAL_FILES}"
-        fi
-        ;;
-    scan)
-        STATS_FILE="{{ restic_config_dir }}/stats-${SOURCE_NAME}.json"
-        if [ -f "${STATS_FILE}" ]; then
-            TOTAL_SIZE=$(jq -r '.total_size // 0' "${STATS_FILE}")
-            TOTAL_FILES=$(jq -r '.total_file_count // 0' "${STATS_FILE}")
-            METRICS=" | size=${TOTAL_SIZE}B files=${TOTAL_FILES}"
-        fi
-        ;;
-esac
-
 # Write to CheckMK spool
 SPOOL_FILE="${SPOOL_DIR}/${TIMESTAMP}_${SERVICE_NAME}"
-echo "${STATUS} ${SERVICE_NAME} ${METRICS} ${MESSAGE}" > "${SPOOL_FILE}"
+echo "${STATUS} ${SERVICE_NAME} - ${MESSAGE}" > "${SPOOL_FILE}"
 
 # Cleanup old spool files for this service (older than 2 hours)
 find "${SPOOL_DIR}" -name "*_${SERVICE_NAME}" -type f -mmin +120 -delete 2>/dev/null || true

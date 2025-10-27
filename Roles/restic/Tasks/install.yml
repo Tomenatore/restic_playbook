@@ -2,17 +2,20 @@
 # roles/restic/tasks/install.yml
 # Install Restic package on target systems
 
-- name: Enable EPEL repository (RHEL/Rocky/Alma)
-  ansible.builtin.dnf:
-    name: epel-release
-    state: present
-  when: ansible_os_family == "RedHat"
+- name: Validate supported operating system
+  ansible.builtin.fail:
+    msg: "Unsupported OS family: {{ ansible_os_family }}. Only RedHat and Debian families are supported."
+  when: ansible_os_family not in ['RedHat', 'Debian']
 
 - name: Install Restic (RHEL/Rocky/Alma)
   ansible.builtin.dnf:
     name: "{{ restic_package_name }}"
     state: present
   when: ansible_os_family == "RedHat"
+  tags:
+    - restic
+    - install
+    - packages
 
 - name: Install Restic (Debian/Ubuntu)
   ansible.builtin.apt:
@@ -20,8 +23,19 @@
     state: present
     update_cache: yes
   when: ansible_os_family == "Debian"
+  tags:
+    - restic
+    - install
+    - packages
 
 - name: Install additional packages
   ansible.builtin.package:
     name: "{{ restic_additional_packages }}"
     state: present
+  loop: "{{ restic_additional_packages }}"
+  loop_control:
+    label: "{{ item }}"
+  tags:
+    - restic
+    - install
+    - packages

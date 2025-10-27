@@ -18,21 +18,20 @@
     - { path: "{{ restic_config_dir }}/passwords", mode: '0700' }
     - { path: "{{ restic_scripts_dir }}", mode: '0755' }
     - { path: "{{ restic_hooks_dir }}", mode: '0755' }
+    - { path: "{{ restic_checkmk_spool_dir }}", mode: '0755', when: "{{ restic_enable_checkmk | bool }}" }
   loop_control:
     label: "{{ item.path }}"
-
-- name: Ensure Check_MK spool directory exists
-  ansible.builtin.file:
-    path: "{{ restic_checkmk_spool_dir }}"
-    state: directory
-    mode: '0755'
-  when: restic_enable_checkmk | bool
+  when: item.when | default(true) | bool
 
 - name: Create exclude file
   ansible.builtin.copy:
     dest: "{{ restic_config_dir }}/excludes.txt"
     mode: '0644'
     content: "{{ restic_backup_excludes | join('\n') }}\n"
+  tags:
+    - restic
+    - setup
+    - config
 
 # ========================================
 # ENCRYPTION
@@ -46,4 +45,10 @@
     owner: root
     group: root
   no_log: "{{ not restic_debug_mode }}"
-  when: restic_password | length > 0
+  when:
+    - restic_password is defined
+    - restic_password | length > 0
+  tags:
+    - restic
+    - setup
+    - encryption

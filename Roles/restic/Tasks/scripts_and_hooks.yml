@@ -13,6 +13,7 @@
     mode: '0755'
     owner: root
     group: root
+  when: restic_enable_checkmk | default(true) | bool
 
 - name: Deploy backup and scan scripts for each source
   ansible.builtin.template:

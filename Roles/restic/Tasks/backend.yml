@@ -7,6 +7,10 @@
     restic_repository: "s3:{% if restic_s3_endpoint %}{{ restic_s3_endpoint }}{% else %}s3.{{ restic_s3_region }}.amazonaws.com{% endif %}/{{ restic_s3_bucket }}{% if restic_s3_prefix %}/{{ restic_s3_prefix }}{% endif %}"
   when: restic_backend_type == "s3"
   no_log: "{{ not restic_debug_mode }}"
+  tags:
+    - restic
+    - backend
+    - config
 
 - name: Ensure local backup directory exists
   ansible.builtin.file:
@@ -16,8 +20,22 @@
     owner: root
     group: root
   when: restic_backend_type == "local"
+  tags:
+    - restic
+    - backend
 
 - name: Build local repository URL
   ansible.builtin.set_fact:
     restic_repository: "{{ restic_local_path }}"
   when: restic_backend_type == "local"
+  tags:
+    - restic
+    - backend
+
+- name: Build SFTP repository URL
+  ansible.builtin.set_fact:
+    restic_repository: "sftp:{{ restic_sftp_user }}@{{ restic_sftp_host }}:{{ restic_sftp_path }}"
+  when: restic_backend_type == "sftp"
+  tags:
+    - restic
+    - backend

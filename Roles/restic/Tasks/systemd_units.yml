@@ -6,35 +6,47 @@
 # DEPLOY SYSTEMD UNITS
 # ========================================
 
-- name: "Deploy systemd units for {{ unit_config.unit }}"
+- name: Deploy systemd service units
+  ansible.builtin.template:
+    src: "systemd/restic-{{ item.unit }}@.service.j2"
+    dest: "/etc/systemd/system/restic-{{ item.unit }}@.service"
+    mode: '0644'
+    owner: root
+    group: root
   loop:
     - { unit: "backup", enabled: "{{ restic_enable_backup }}" }
     - { unit: "prune", enabled: "{{ restic_enable_prune }}" }
     - { unit: "check", enabled: "{{ restic_enable_check }}" }
     - { unit: "scan", enabled: "{{ restic_enable_scan }}" }
   loop_control:
-    loop_var: unit_config
-    label: "{{ unit_config.unit }}"
-  when: unit_config.enabled | bool
-  block:
-    - name: "Deploy {{ unit_config.unit }} service unit"
-      ansible.builtin.template:
-        src: "systemd/restic-{{ unit_config.unit }}@.service.j2"
-        dest: "/etc/systemd/system/restic-{{ unit_config.unit }}@.service"
-        mode: '0644'
-        owner: root
-        group: root
-      notify: systemd daemon-reload
+    label: "{{ item.unit }}"
+  when: item.enabled | bool
+  notify: systemd daemon-reload
+  tags:
+    - restic
+    - systemd
 
-    - name: "Deploy {{ unit_config.unit }} timer unit"
-      ansible.builtin.template:
-        src: "systemd/restic-{{ unit_config.unit }}@.timer.j2"
-        dest: "/etc/systemd/system/restic-{{ unit_config.unit }}@.timer"
-        mode: '0644'
-        owner: root
-        group: root
-      when: restic_enable_timers | bool
-      notify: systemd daemon-reload
+- name: Deploy systemd timer units
+  ansible.builtin.template:
+    src: "systemd/restic-{{ item.unit }}@.timer.j2"
+    dest: "/etc/systemd/system/restic-{{ item.unit }}@.timer"
+    mode: '0644'
+    owner: root
+    group: root
+  loop:
+    - { unit: "backup", enabled: "{{ restic_enable_backup }}" }
+    - { unit: "prune", enabled: "{{ restic_enable_prune }}" }
+    - { unit: "check", enabled: "{{ restic_enable_check }}" }
+    - { unit: "scan", enabled: "{{ restic_enable_scan }}" }
+  loop_control:
+    label: "{{ item.unit }}"
+  when:
+    - item.enabled | bool
+    - restic_enable_timers | bool
+  notify: systemd daemon-reload
+  tags:
+    - restic
+    - systemd
 
 # ========================================
 # ENABLE AND START TIMERS
@@ -51,14 +63,14 @@
     daemon_reload: yes
   loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
   loop_control:
-    label: "{{ item.name }}"
+    label: "backup-{{ item.name }}"
   when:
     - restic_enable_backup | bool
     - restic_enable_timers | bool
 
 - name: Enable and start maintenance timers (prune, check, scan)
   ansible.builtin.systemd:
-    name: "restic-{{ item.unit }}@{{ (restic_backup_sources | selectattr('enabled') | list | first).name }}.timer"
+    name: "restic-{{ item.unit }}@{{ (restic_backup_sources | selectattr('enabled') | list)[0].name }}.timer"
     enabled: yes
     state: started
     daemon_reload: yes
@@ -89,3 +101,9 @@
       - ""
       - "Check timer status with: systemctl list-timers 'restic-*'"
       - "View logs with: journalctl -u 'restic-*' -f"
+  when:
+    - not ansible_check_mode
+    - (restic_backup_sources | selectattr('enabled') | list | length) > 0
+  tags:
+    - restic
+    - systemd

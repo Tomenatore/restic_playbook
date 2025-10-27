@@ -1,0 +1,92 @@
+﻿---
+# roles/restic/tasks/validate.yml
+# Validate required variables and configuration
+
+- name: Validate restic_password is defined
+  ansible.builtin.fail:
+    msg: "restic_password must be defined! Set it in group_vars/all/vault.yml (encrypted with ansible-vault)"
+  when:
+    - restic_password is not defined or restic_password | length == 0
+  tags:
+    - restic
+    - validate
+
+- name: Validate at least one backup source is enabled
+  ansible.builtin.fail:
+    msg: "No backup sources enabled! Define at least one enabled source in restic_backup_sources"
+  when:
+    - restic_backup_sources | selectattr('enabled') | list | length == 0
+  tags:
+    - restic
+    - validate
+
+- name: Validate backend type
+  ansible.builtin.fail:
+    msg: "Invalid backend type: {{ restic_backend_type }}. Must be one of: s3, local, sftp"
+  when:
+    - restic_backend_type not in ['s3', 'local', 'sftp']
+  tags:
+    - restic
+    - validate
+
+- name: Validate S3 backend configuration
+  ansible.builtin.fail:
+    msg: "S3 backend requires: restic_s3_bucket, restic_s3_region, restic_s3_access_key, restic_s3_secret_key"
+  when:
+    - restic_backend_type == "s3"
+    - (restic_s3_bucket | length == 0) or
+      (restic_s3_region | length == 0) or
+      (restic_s3_access_key | length == 0) or
+      (restic_s3_secret_key | length == 0)
+  tags:
+    - restic
+    - validate
+
+- name: Validate local backend configuration
+  ansible.builtin.fail:
+    msg: "Local backend requires: restic_local_path"
+  when:
+    - restic_backend_type == "local"
+    - restic_local_path | length == 0
+  tags:
+    - restic
+    - validate
+
+- name: Validate SFTP backend configuration
+  ansible.builtin.fail:
+    msg: "SFTP backend requires: restic_sftp_host, restic_sftp_user, restic_sftp_path"
+  when:
+    - restic_backend_type == "sftp"
+    - (restic_sftp_host | length == 0) or
+      (restic_sftp_user | length == 0) or
+      (restic_sftp_path | length == 0)
+  tags:
+    - restic
+    - validate
+
+- name: Validate backup sources structure
+  ansible.builtin.fail:
+    msg: "Invalid backup source: {{ item.name | default('unnamed') }}. Each source must have: name, path, tags (list), enabled (bool)"
+  loop: "{{ restic_backup_sources }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+  when:
+    - item.name is not defined or
+      item.path is not defined or
+      item.tags is not defined or
+      item.enabled is not defined or
+      item.tags is not iterable
+  tags:
+    - restic
+    - validate
+
+- name: Display validation summary
+  ansible.builtin.debug:
+    msg:
+      - "=== Restic Configuration Validation Passed ==="
+      - "Backend: {{ restic_backend_type }}"
+      - "Enabled sources: {{ restic_backup_sources | selectattr('enabled') | list | length }}"
+      - "Password configured: {{ 'Yes' if (restic_password is defined and restic_password | length > 0) else 'No' }}"
+  tags:
+    - restic
+    - validate

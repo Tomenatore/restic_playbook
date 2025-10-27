@@ -7,12 +7,14 @@ Production-ready Ansible role for deploying Restic backups using systemd units a
 - **Systemd Integration**: Backups run via systemd timers, not Ansible
 - **Instance-Based Units**: Uses systemd instances (`@`) for per-source configuration
 - **Intelligent Lock Management**: Auto-detection and cleanup of stale locks with retry logic
-- **CheckMK Monitoring**: Per-unit monitoring with custom tags
-- **Restic Hooks**: Pre/post-backup tasks as shell scripts
+- **CheckMK Monitoring**: Per-unit monitoring with custom tags (optional, can be disabled)
+- **Restic Hooks**: Pre/post-backup tasks as shell scripts (optional)
 - **Multiple Job Types**: backup, prune, check, scan
 - **Syslog Logging**: Centralized logging via syslog
 - **Resource Control**: CPU, I/O, and Nice level limits
-- **S3-Compatible**: Works with AWS S3, MinIO, Wasabi, Backblaze B2, and others
+- **Multiple Backends**: S3, SFTP, and local filesystem support
+- **Configuration Validation**: Comprehensive validation of all required variables
+- **Helper Scripts**: Pre-configured restore and repository info tools
 
 ## Requirements
 
@@ -20,6 +22,92 @@ Production-ready Ansible role for deploying Restic backups using systemd units a
 - systemd-based Linux (RHEL/Debian/Ubuntu)
 - Restic (installed by role)
 - CheckMK agent (optional)
+
+## Role Tags
+
+This role provides granular control through Ansible tags. You can run specific parts of the role using `--tags` or skip sections with `--skip-tags`.
+
+### Available Tags
+
+| Tag | Scope | Description |
+|-----|-------|-------------|
+| `validate` | Validation | Validate all configuration before deployment |
+| `install` | Installation | Install Restic package |
+| `packages` | Installation | Install Restic and additional packages |
+| `setup` | Setup | Create directories and deploy encryption password |
+| `config` | Setup | Directory and configuration setup |
+| `encryption` | Setup | Deploy repository password file |
+| `backend` | Backend | Configure backup backend (S3/SFTP/local) |
+| `repository` | Repository | Initialize Restic repository |
+| `systemd` | Systemd | Deploy systemd service and timer units |
+| `scripts` | Scripts | Deploy backup and helper scripts |
+| `hooks` | Scripts | Deploy pre/post backup hooks |
+| `restic` | All | All tasks in the role (default) |
+
+### Tag Usage Examples
+
+**Run only validation:**
+```bash
+ansible-playbook playbook.yml --tags validate --ask-vault-pass
+```
+
+**Install Restic and validate configuration:**
+```bash
+ansible-playbook playbook.yml --tags install,validate --ask-vault-pass
+```
+
+**Deploy only systemd units (skip everything else):**
+```bash
+ansible-playbook playbook.yml --tags systemd --ask-vault-pass
+```
+
+**Deploy scripts and hooks only:**
+```bash
+ansible-playbook playbook.yml --tags scripts,hooks --ask-vault-pass
+```
+
+**Skip repository initialization (useful for existing repos):**
+```bash
+ansible-playbook playbook.yml --skip-tags repository --ask-vault-pass
+```
+
+**Update backend configuration only:**
+```bash
+ansible-playbook playbook.yml --tags backend --ask-vault-pass
+```
+
+**Full deployment without validation (not recommended):**
+```bash
+ansible-playbook playbook.yml --skip-tags validate --ask-vault-pass
+```
+
+### Tag Combinations by Use Case
+
+**Initial Setup (full deployment):**
+```bash
+ansible-playbook playbook.yml --ask-vault-pass
+# Runs: validate → install → setup → backend → repository → systemd → scripts
+```
+
+**Configuration Update (no reinstall):**
+```bash
+ansible-playbook playbook.yml --tags validate,setup,backend,systemd,scripts --ask-vault-pass
+```
+
+**Systemd Unit Changes Only:**
+```bash
+ansible-playbook playbook.yml --tags systemd --ask-vault-pass
+```
+
+**Add New Backup Source:**
+```bash
+ansible-playbook playbook.yml --tags validate,scripts,systemd --ask-vault-pass
+```
+
+**Security Update (rotate password):**
+```bash
+ansible-playbook playbook.yml --tags encryption --ask-vault-pass
+```
 
 
 ## Architecture
@@ -465,7 +553,15 @@ No Ansible configuration needed - just create the hooks manually.
 - **Naming**: `pre-backup-<source-name>.sh`, `post-backup-<source-name>.sh`
 - **Location**: `/etc/restic/hooks/` (default, configurable via `restic_hooks_dir`)
 
-## CheckMK Integration
+### CheckMK Integration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `restic_enable_checkmk` | `true` | Enable/disable CheckMK monitoring |
+| `restic_checkmk_spool_dir` | `/var/lib/check_mk_agent/spool` | CheckMK spool directory |
+| `restic_checkmk_service_prefix` | `Restic` | Service name prefix |
+
+**Note**: Set `restic_enable_checkmk: false` to disable monitoring integration entirely.
 
 Service names:
 - `Restic_backup_<source>`
@@ -474,8 +570,6 @@ Service names:
 - `Restic_scan_<source>`
 
 Status codes: `0=OK`, `1=WARNING`, `2=CRITICAL`
-
-Metrics: `size`, `files` (backup/scan only)
 
 ## Systemd Management
 
@@ -636,14 +730,61 @@ Scripts are automatically deployed during role execution with appropriate permis
 
 ## Key Variables
 
-### Backend (S3)
+### Backend Configuration
+
+The role supports multiple backend types:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `restic_backend_type` | `s3` | Backend type |
-| `restic_s3_bucket` | - | S3 bucket |
+| `restic_backend_type` | `s3` | Backend type: `s3`, `local`, or `sftp` |
+
+#### S3 Backend
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `restic_s3_bucket` | - | S3 bucket name (required) |
 | `restic_s3_region` | `eu-central-1` | AWS region |
-| `restic_s3_endpoint` | - | Custom endpoint |
+| `restic_s3_endpoint` | - | Custom endpoint (MinIO, Wasabi, etc.) |
+| `restic_s3_access_key` | - | AWS access key (from vault) |
+| `restic_s3_secret_key` | - | AWS secret key (from vault) |
+| `restic_s3_prefix` | - | Optional path prefix in bucket |
+
+Example S3 configuration:
+```yaml
+restic_backend_type: "s3"
+restic_s3_bucket: "my-backup-bucket"
+restic_s3_region: "eu-central-1"
+restic_s3_access_key: "{{ vault_s3_access_key }}"
+restic_s3_secret_key: "{{ vault_s3_secret_key }}"
+```
+
+#### Local Filesystem Backend
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `restic_local_path` | - | Local directory path (required) |
+
+Example local configuration:
+```yaml
+restic_backend_type: "local"
+restic_local_path: "/mnt/backup/restic-repo"
+```
+
+#### SFTP Backend
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `restic_sftp_host` | - | SFTP server hostname (required) |
+| `restic_sftp_user` | - | SFTP username (required) |
+| `restic_sftp_path` | - | Path on SFTP server (required) |
+
+Example SFTP configuration:
+```yaml
+restic_backend_type: "sftp"
+restic_sftp_host: "backup.example.com"
+restic_sftp_user: "backup-user"
+restic_sftp_path: "/backups/restic"
+```
 
 ### Backup Sources
 
