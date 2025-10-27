@@ -14,17 +14,39 @@
     owner: root
     group: root
   when: restic_enable_checkmk | default(true) | bool
+  tags:
+    - restic
+    - scripts
 
-- name: Deploy backup and scan scripts for each source
+- name: Deploy backup scripts for each source
   ansible.builtin.template:
-    src: "scripts/restic-{{ item[1] }}.sh.j2"
-    dest: "{{ restic_scripts_dir }}/restic-{{ item[1] }}-{{ item[0].name }}.sh"
+    src: "scripts/restic-backup.sh.j2"
+    dest: "{{ restic_scripts_dir }}/restic-backup-{{ item.name }}.sh"
     mode: '0755'
     owner: root
     group: root
-  loop: "{{ restic_backup_sources | selectattr('enabled') | list | product(['backup', 'scan']) }}"
+  loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
   loop_control:
-    label: "{{ item[1] }}-{{ item[0].name }}"
+    label: "backup-{{ item.name }}"
+  when: restic_enable_backup | bool
+  tags:
+    - restic
+    - scripts
+
+- name: Deploy scan scripts for each source
+  ansible.builtin.template:
+    src: "scripts/restic-scan.sh.j2"
+    dest: "{{ restic_scripts_dir }}/restic-scan-{{ item.name }}.sh"
+    mode: '0755'
+    owner: root
+    group: root
+  loop: "{{ restic_backup_sources | selectattr('enabled') | list }}"
+  loop_control:
+    label: "scan-{{ item.name }}"
+  when: restic_enable_scan | bool
+  tags:
+    - restic
+    - scripts
 
 # ========================================
 # HELPER SCRIPTS
@@ -37,6 +59,9 @@
     mode: '0755'
     owner: root
     group: root
+  tags:
+    - restic
+    - scripts
 
 - name: Deploy helper scripts
   ansible.builtin.template:
@@ -50,6 +75,9 @@
     - restic-repo-info
   loop_control:
     label: "{{ item }}"
+  tags:
+    - restic
+    - scripts
 
 # ========================================
 # PRE/POST BACKUP HOOKS
@@ -82,6 +110,9 @@
     - restic_custom_hooks_dir | length > 0
     - item.hook_pre_script is not defined
   ignore_errors: yes  # Hook might not exist for this source
+  tags:
+    - restic
+    - hooks
 
 - name: Copy post-backup hooks from custom directory
   ansible.builtin.copy:
@@ -97,6 +128,9 @@
     - restic_custom_hooks_dir | length > 0
     - item.hook_post_script is not defined
   ignore_errors: yes  # Hook might not exist for this source
+  tags:
+    - restic
+    - hooks
 
 - name: Copy pre-backup per-source hook scripts
   ansible.builtin.copy:
@@ -111,6 +145,9 @@
   when:
     - item.hook_pre_script is defined
     - item.hook_pre_script | length > 0
+  tags:
+    - restic
+    - hooks
 
 - name: Copy post-backup per-source hook scripts
   ansible.builtin.copy:
@@ -125,3 +162,6 @@
   when:
     - item.hook_post_script is defined
     - item.hook_post_script | length > 0
+  tags:
+    - restic
+    - hooks
