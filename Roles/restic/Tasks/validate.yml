@@ -89,25 +89,25 @@
     - restic
     - validate
 
-- name: Validate timeout values are positive
+- name: Validate timeout values are not negative
   ansible.builtin.fail:
-    msg: "Timeout values must be positive integers! Check restic_backup_timeout_seconds ({{ restic_backup_timeout_seconds }})"
+    msg: "Timeout values must be non-negative! Check restic_backup_timeout_seconds ({{ restic_backup_timeout_seconds }}). Use 0 for no timeout (infinity)."
   when:
     - restic_backup_timeout_seconds is defined
-    - restic_backup_timeout_seconds | int <= 0
+    - restic_backup_timeout_seconds | int < 0
   tags:
     - restic
     - validate
 
-- name: Validate per-source timeout overrides
+- name: Validate per-source timeout overrides are not negative
   ansible.builtin.fail:
-    msg: "Invalid timeout for source {{ item.name }}: {{ item.timeout_seconds }}. Must be a positive integer."
+    msg: "Invalid timeout for source {{ item.name }}: {{ item.timeout_seconds }}. Must be non-negative (0 = no timeout)."
   loop: "{{ restic_backup_sources }}"
   loop_control:
     label: "{{ item.name | default('unnamed') }}"
   when:
     - item.timeout_seconds is defined
-    - item.timeout_seconds | int <= 0
+    - item.timeout_seconds | int < 0
   tags:
     - restic
     - validate

@@ -137,7 +137,7 @@ restic_cpu_quota: 80  # Percentage (100 = 1 core)
 restic_io_weight: 100  # 1-10000, default 100
 restic_nice_level: 10  # -20 to 19, higher = lower priority
 
-# Backup timeout (0 = unlimited, systemd default)
+# Backup timeout (0 = infinity/no timeout, systemd default)
 restic_backup_timeout_seconds: 0  # Override per source with timeout_seconds
 
 # Retry lock duration (wait if repository is locked)
