@@ -17,14 +17,14 @@
 
 - name: Deploy backup and scan scripts for each source
   ansible.builtin.template:
-    src: "scripts/restic-{{ item.1 }}.sh.j2"
-    dest: "{{ restic_scripts_dir }}/restic-{{ item.1 }}-{{ item.0.name }}.sh"
+    src: "scripts/restic-{{ item[1] }}.sh.j2"
+    dest: "{{ restic_scripts_dir }}/restic-{{ item[1] }}-{{ item[0].name }}.sh"
     mode: '0755'
     owner: root
     group: root
   loop: "{{ restic_backup_sources | selectattr('enabled') | list | product(['backup', 'scan']) }}"
   loop_control:
-    label: "{{ item.1 }}-{{ item.0.name }}"
+    label: "{{ item[1] }}-{{ item[0].name }}"
 
 # ========================================
 # HELPER SCRIPTS
