@@ -11,6 +11,15 @@
     - restic
     - validate
 
+- name: Validate backup sources are defined
+  ansible.builtin.fail:
+    msg: "restic_backup_sources must be defined and contain at least one source!"
+  when:
+    - restic_backup_sources is not defined or restic_backup_sources | length == 0
+  tags:
+    - restic
+    - validate
+
 - name: Validate at least one backup source is enabled
   ansible.builtin.fail:
     msg: "No backup sources enabled! Define at least one enabled source in restic_backup_sources"
@@ -76,6 +85,29 @@
       item.tags is not defined or
       item.enabled is not defined or
       item.tags is not iterable
+  tags:
+    - restic
+    - validate
+
+- name: Validate timeout values are positive
+  ansible.builtin.fail:
+    msg: "Timeout values must be positive integers! Check restic_backup_timeout_seconds ({{ restic_backup_timeout_seconds }})"
+  when:
+    - restic_backup_timeout_seconds is defined
+    - restic_backup_timeout_seconds | int <= 0
+  tags:
+    - restic
+    - validate
+
+- name: Validate per-source timeout overrides
+  ansible.builtin.fail:
+    msg: "Invalid timeout for source {{ item.name }}: {{ item.timeout_seconds }}. Must be a positive integer."
+  loop: "{{ restic_backup_sources }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+  when:
+    - item.timeout_seconds is defined
+    - item.timeout_seconds | int <= 0
   tags:
     - restic
     - validate

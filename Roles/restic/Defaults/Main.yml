@@ -18,7 +18,7 @@ restic_password_file: "repository.key"
 # BACKEND CONFIGURATION
 # ========================================
 
-restic_backend_type: "s3"  # s3, local, sftp, rest
+restic_backend_type: "s3"  # s3, local, sftp
 
 # S3 Backend (configure in group_vars or playbook)
 restic_s3_bucket: ""  # Example: "my-backup-bucket"
@@ -143,6 +143,11 @@ restic_backup_timeout_seconds: 0  # Override per source with timeout_seconds
 # Retry lock duration (wait if repository is locked)
 restic_retry_lock_duration: "5m"  # Override per source with retry_lock_duration
 
+# Exit code 3 handling (incomplete backup - some files couldn't be read)
+# When true, exit code 3 is treated as success (warning logged)
+# When false, exit code 3 is treated as failure
+restic_allow_incomplete_backup: true
+
 # ========================================
 # RETENTION POLICY
 # ========================================
@@ -237,10 +242,10 @@ restic_enable_timers: true
 # Restic package name
 restic_package_name: "restic"
 
-# Additional packages
+# Additional packages (required for helper scripts)
 restic_additional_packages:
-  - "jq"  # Required for JSON parsing in scripts
-  - "bc"  # Required for calculations
+  - "jq"  # Required: JSON parsing in restic-scan.sh and restic-repo-info.sh
+  - "bc"  # Required: Byte-to-GB conversion in restic-scan.sh
 
 # ========================================
 # DEBUG MODE

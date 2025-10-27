@@ -23,47 +23,56 @@ fi
 # Log start
 logger -t "${LOG_TAG}" -p user.info "Starting backup for ${SOURCE_NAME}"
 
-# Build restic command in one go
-RESTIC_CMD="restic backup ${SOURCE_PATH} \
-  --tag auto --tag ${SOURCE_NAME} \
-  --limit-upload {{ restic_upload_limit_kbps }} \
-  --limit-download {{ restic_download_limit_kbps }} \
-  --retry-lock {{ item.retry_lock_duration | default(restic_retry_lock_duration) }} \
-  --json"
+# Build restic command arguments
+RESTIC_ARGS=(
+    backup
+    "${SOURCE_PATH}"
+    --tag auto
+    --tag "${SOURCE_NAME}"
+    --limit-upload {{ restic_upload_limit_kbps }}
+    --limit-download {{ restic_download_limit_kbps }}
+    --retry-lock {{ item.retry_lock_duration | default(restic_retry_lock_duration) }}
+    --json
+)
 
 # Add exclusions if file exists
-[ -f "${EXCLUDE_FILE}" ] && RESTIC_CMD="${RESTIC_CMD} --exclude-file=${EXCLUDE_FILE}"
+[ -f "${EXCLUDE_FILE}" ] && RESTIC_ARGS+=(--exclude-file="${EXCLUDE_FILE}")
 
 # Add user tags
 for TAG in ${SOURCE_TAGS}; do
-    RESTIC_CMD="${RESTIC_CMD} --tag \"${TAG}\""
+    RESTIC_ARGS+=(--tag "${TAG}")
 done
 
 # Add force rescan if configured globally
 {% if restic_force_rescan %}
-RESTIC_CMD="${RESTIC_CMD} --force"
+RESTIC_ARGS+=(--force)
 {% endif %}
 
 # Check force rescan day
 {% if restic_force_rescan_day > 0 %}
 CURRENT_DAY=$(date +%d)
 if [ "${CURRENT_DAY}" = "{{ restic_force_rescan_day }}" ]; then
-    RESTIC_CMD="${RESTIC_CMD} --force"
+    RESTIC_ARGS+=(--force)
     logger -t "${LOG_TAG}" -p user.info "Force rescan enabled (day ${CURRENT_DAY})"
 fi
 {% endif %}
 
 # Execute backup
-logger -t "${LOG_TAG}" -p user.info "Executing: ${RESTIC_CMD}"
+logger -t "${LOG_TAG}" -p user.info "Executing: restic ${RESTIC_ARGS[*]}"
 
-if ${RESTIC_CMD} 2>&1 | logger -t "${LOG_TAG}" -p user.info; then
+if restic "${RESTIC_ARGS[@]}" 2>&1 | logger -t "${LOG_TAG}" -p user.info; then
     logger -t "${LOG_TAG}" -p user.info "Backup completed successfully for ${SOURCE_NAME}"
     exit 0
 else
     EXIT_CODE=$?
     if [ ${EXIT_CODE} -eq 3 ]; then
+{% if restic_allow_incomplete_backup %}
         logger -t "${LOG_TAG}" -p user.warning "Backup completed with warnings (incomplete snapshot) for ${SOURCE_NAME}"
         exit 0
+{% else %}
+        logger -t "${LOG_TAG}" -p user.error "Backup incomplete for ${SOURCE_NAME} (some files unreadable)"
+        exit 3
+{% endif %}
     else
         logger -t "${LOG_TAG}" -p user.error "Backup failed for ${SOURCE_NAME} with exit code ${EXIT_CODE}"
         exit ${EXIT_CODE}

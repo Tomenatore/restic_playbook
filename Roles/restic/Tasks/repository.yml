@@ -53,6 +53,19 @@
     - restic
     - repository
 
+- name: Verify repository was initialized successfully
+  ansible.builtin.shell:
+    cmd: restic snapshots
+  environment: "{{ restic_env }}"
+  register: restic_repo_verify
+  when: restic_repo_init is changed
+  failed_when: restic_repo_verify.rc != 0
+  changed_when: false
+  no_log: "{{ not restic_debug_mode }}"
+  tags:
+    - restic
+    - repository
+
 - name: Confirm repository status
   ansible.builtin.debug:
     msg: "Repository {{ restic_repository }} is ready"

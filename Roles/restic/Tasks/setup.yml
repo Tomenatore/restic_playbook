@@ -18,7 +18,7 @@
     - { path: "{{ restic_config_dir }}/passwords", mode: '0700' }
     - { path: "{{ restic_scripts_dir }}", mode: '0755' }
     - { path: "{{ restic_hooks_dir }}", mode: '0755' }
-    - { path: "{{ restic_checkmk_spool_dir }}", mode: '0755', when: "{{ restic_enable_checkmk | bool }}" }
+    - { path: "{{ restic_checkmk_spool_dir }}", mode: '0755', when: "restic_enable_checkmk | bool" }
   loop_control:
     label: "{{ item.path }}"
   when: item.when | default(true) | bool
