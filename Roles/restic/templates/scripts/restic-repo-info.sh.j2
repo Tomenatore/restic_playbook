@@ -61,35 +61,35 @@ print_error() {
 
 show_usage() {
     cat << EOF
-${GREEN}Restic Repository Info & Statistics${NC}
+Restic Repository Info & Statistics
 
-${YELLOW}Repository:${NC} $RESTIC_REPOSITORY
+Repository: $RESTIC_REPOSITORY
 
-${YELLOW}Available Commands:${NC}
+Available Commands:
 
-  ${BLUE}status${NC}              Quick repository status overview
-  ${BLUE}stats${NC}               Detailed repository statistics
-  ${BLUE}stats-raw${NC}           Raw storage statistics (actual disk usage)
-  ${BLUE}stats-restore${NC}       Restore size statistics (uncompressed size)
+  status              Quick repository status overview
+  stats               Detailed repository statistics
+  stats-raw           Raw storage statistics (actual disk usage)
+  stats-restore       Restore size statistics (uncompressed size)
 
-  ${BLUE}snapshots${NC}           List all snapshots
-  ${BLUE}snapshots-latest${NC}    Show only latest snapshots per host/path
-  ${BLUE}snapshots-json${NC}      List snapshots in JSON format
+  snapshots           List all snapshots
+  snapshots-latest    Show only latest snapshots per host/path
+  snapshots-json      List snapshots in JSON format
 
-  ${BLUE}locks${NC}               Show current repository locks
-  ${BLUE}unlock${NC}              Remove stale locks (older than 30 minutes)
+  locks               Show current repository locks
+  unlock              Remove stale locks (older than 30 minutes)
 
-  ${BLUE}check${NC}               Check repository integrity (quick)
-  ${BLUE}check-data${NC}          Check repository data integrity (slow, reads all data)
+  check               Check repository integrity (quick)
+  check-data          Check repository data integrity (slow, reads all data)
 
-  ${BLUE}prune-dry${NC}           Dry-run prune (show what would be deleted)
-  ${BLUE}size${NC}                Calculate repository size by snapshot
+  prune-dry           Dry-run prune (show what would be deleted)
+  size                Calculate repository size by snapshot
 
-  ${BLUE}cache-clear${NC}         Clear local restic cache
+  cache-clear         Clear local restic cache
 
-  ${BLUE}debug${NC}               Show environment variables and configuration
+  debug               Show environment variables and configuration
 
-${YELLOW}Examples:${NC}
+Examples:
 
   # Quick status check
   $0 status

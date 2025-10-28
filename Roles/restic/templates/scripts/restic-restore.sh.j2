@@ -56,34 +56,34 @@ print_error() {
 
 show_usage() {
     cat << EOF
-${GREEN}Restic Restore Helper${NC}
+Restic Restore Helper
 
-${YELLOW}Repository:${NC} $RESTIC_REPOSITORY
+Repository: $RESTIC_REPOSITORY
 
-${YELLOW}Available Commands:${NC}
+Available Commands:
 
-  ${BLUE}list${NC}                                  List all available snapshots
-  ${BLUE}list-tag${NC} <tag>                        List snapshots with specific tag
-  ${BLUE}list-files${NC} <snapshot-id|latest>       List files in a snapshot
-  ${BLUE}find${NC} <pattern>                        Find files across all snapshots (e.g., "*.conf")
-  ${BLUE}diff${NC} <snapshot1> <snapshot2>          Show differences between snapshots
+  list                                  List all available snapshots
+  list-tag <tag>                        List snapshots with specific tag
+  list-files <snapshot-id|latest>       List files in a snapshot
+  find <pattern>                        Find files across all snapshots (e.g., "*.conf")
+  diff <snapshot1> <snapshot2>          Show differences between snapshots
 
-  ${BLUE}restore${NC} <snapshot-id|latest> <target-dir>
+  restore <snapshot-id|latest> <target-dir>
                                          Restore entire snapshot to target directory
 
-  ${BLUE}restore-file${NC} <snapshot-id|latest> <target-dir> <file-path>
+  restore-file <snapshot-id|latest> <target-dir> <file-path>
                                          Restore specific file from snapshot
 
-  ${BLUE}restore-verify${NC} <snapshot-id|latest> <target-dir>
+  restore-verify <snapshot-id|latest> <target-dir>
                                          Restore with verification
 
-  ${BLUE}mount${NC} <mount-point>                   Mount all snapshots as FUSE filesystem
-  ${BLUE}umount${NC} <mount-point>                  Unmount FUSE filesystem
+  mount <mount-point>                   Mount all snapshots as FUSE filesystem
+  umount <mount-point>                  Unmount FUSE filesystem
 
-  ${BLUE}check${NC}                                 Check repository integrity
-  ${BLUE}unlock${NC}                                Remove stale locks (>30 minutes)
+  check                                 Check repository integrity
+  unlock                                Remove stale locks (>30 minutes)
 
-${YELLOW}Examples:${NC}
+Examples:
 
   # List all snapshots
   $0 list
