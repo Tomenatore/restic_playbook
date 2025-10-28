@@ -64,7 +64,7 @@ Nice={{ restic_nice_level }}
 # Security
 PrivateTmp=yes
 ProtectSystem=strict
-ReadWritePaths={{ restic_config_dir }} {{ restic_scripts_dir }} {{ restic_hooks_dir }} {% if restic_enable_checkmk | default(true) | bool %}{{ restic_checkmk_spool_dir }} {% endif %}{% for source in restic_backup_sources %}{{ source.path }} {% endfor %}
+ReadWritePaths={{ restic_config_dir }} {{ restic_scripts_dir }} {{ restic_hooks_dir }} {% if restic_enable_checkmk | default(true) | bool %}{{ restic_checkmk_spool_dir }} {% endif %}{% if restic_backend_type == "local" %}{{ restic_local_path }} {% endif %}{% for source in restic_backup_sources %}{{ source.path }} {% endfor %}
 
 # Restart behavior - retry on failure (e.g., locked repository)
 Restart=on-failure

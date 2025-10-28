@@ -57,7 +57,7 @@ Nice={{ restic_nice_level }}
 # Security
 PrivateTmp=yes
 ProtectSystem=strict
-ReadWritePaths={{ restic_config_dir }} {% if restic_enable_checkmk | default(true) | bool %}{{ restic_checkmk_spool_dir }}{% endif %}
+ReadWritePaths={{ restic_config_dir }} {% if restic_enable_checkmk | default(true) | bool %}{{ restic_checkmk_spool_dir }} {% endif %}{% if restic_backend_type == "local" %}{{ restic_local_path }}{% endif %}
 
 [Install]
 WantedBy=multi-user.target
