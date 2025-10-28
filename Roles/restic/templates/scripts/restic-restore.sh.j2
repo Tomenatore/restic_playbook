@@ -28,12 +28,14 @@ export AWS_SECRET_ACCESS_KEY="{{ restic_s3_secret_key }}"
 export AWS_DEFAULT_REGION="{{ restic_s3_region }}"
 {% endif %}
 
+{% raw %}
 # Colors for output
-RED='\\033[0;31m'
-GREEN='\\033[0;32m'
-YELLOW='\\033[1;33m'
-BLUE='\\033[0;34m'
-NC='\\033[0m' # No Color
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+{% endraw %}
 
 # Helper functions
 print_info() {
