@@ -114,14 +114,8 @@ restic_retention_keep_yearly: 5
 # RESTIC LOCK MANAGEMENT
 # ========================================
 
-# Stale lock detection threshold (crash recovery)
-# Locks older than this threshold are removed before operations
-# Locks younger than this pass through to --retry-lock mechanism
-restic_lock_max_age_hours: 12         # Default: 12 hours
-
-# Retry-lock duration (short-term wait for concurrent operations)
-restic_retry_lock_duration: "5m"      # Backup operations wait up to 5 minutes
-# Prune/Check/Scan use 30s (hardcoded for lower priority)
+# Stale locks are automatically removed before operations
+# Restic's 'restic unlock' removes locks older than 30 minutes
 
 # Systemd restart configuration (long-term retry on failure)
 # Services automatically retry when failing due to locked repository

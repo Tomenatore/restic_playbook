@@ -31,7 +31,6 @@ RESTIC_ARGS=(
     --tag "${SOURCE_NAME}"
     --limit-upload {{ restic_upload_limit_kbps }}
     --limit-download {{ restic_download_limit_kbps }}
-    --retry-lock {{ item.retry_lock_duration | default(restic_retry_lock_duration) }}
     --json
 )
 

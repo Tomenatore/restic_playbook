@@ -140,9 +140,6 @@ restic_nice_level: 10  # -20 to 19, higher = lower priority
 # Backup timeout (0 = infinity/no timeout, systemd default)
 restic_backup_timeout_seconds: 0  # Override per source with timeout_seconds
 
-# Retry lock duration (wait if repository is locked)
-restic_retry_lock_duration: "5m"  # Override per source with retry_lock_duration
-
 # Exit code 3 handling (incomplete backup - some files couldn't be read)
 # When true, exit code 3 is treated as success (warning logged)
 # When false, exit code 3 is treated as failure
@@ -163,15 +160,8 @@ restic_retention_keep_yearly: 5
 # RESTIC LOCK MANAGEMENT
 # ========================================
 
-# Maximum age of locks before cleanup (stale lock detection)
-# If a lock is older than this threshold, it's considered stale (likely from a crash)
-# and will be removed via 'restic unlock' in ExecStartPre
-#
-# Note: Restic's 'restic unlock' command removes locks older than 30 minutes (hardcoded)
-# This variable controls WHEN we call 'restic unlock', not what it removes
-#
-# Locks younger than this threshold are handled by --retry-lock
-restic_lock_max_age_hours: 12  # Threshold for stale lock detection
+# Stale locks are automatically removed before each operation
+# Restic's 'restic unlock' removes locks older than 30 minutes (hardcoded)
 
 # Retry configuration for failed operations
 # Services will retry on failure (e.g., when repository is locked)
