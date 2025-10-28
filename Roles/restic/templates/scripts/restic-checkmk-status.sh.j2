@@ -32,6 +32,12 @@ fi
 SPOOL_FILE="${SPOOL_DIR}/${TIMESTAMP}_${SERVICE_NAME}"
 echo "${STATUS} ${SERVICE_NAME} - ${MESSAGE}" > "${SPOOL_FILE}"
 
+# Human-readable output to stdout/journal
+echo "[CheckMK] Service: ${SERVICE_NAME}"
+echo "[CheckMK] Status: ${STATUS} (${STATUS_TEXT})"
+echo "[CheckMK] Message: ${MESSAGE}"
+echo "[CheckMK] Spool file: ${SPOOL_FILE}"
+
 # Cleanup old spool files for this service (older than 2 hours)
 find "${SPOOL_DIR}" -name "*_${SERVICE_NAME}" -type f -mmin +120 -delete 2>/dev/null || true
 

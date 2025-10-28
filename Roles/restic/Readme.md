@@ -142,232 +142,88 @@ ansible-playbook playbook.yml --tags encryption --ask-vault-pass
 
 ## Lock Management
 
-This role implements a sophisticated lock management system combining Restic's native locks with intelligent systemd retry logic.
+This role implements a fail-fast lock management system with automatic retry logic to prevent hanging jobs from blocking backups.
 
-### Overview: Two Lock Systems
+### How It Works
 
-#### 1. Restic's Native Repository Lock System
-- **Hardcoded in Restic**: Locks older than 30 minutes are considered "stale"
-- **Command**: `restic unlock` removes locks older than 30 minutes
-- **Not configurable**: The 30-minute threshold is built into Restic
-- **Purpose**: Prevents concurrent repository access, handles crash recovery
+**Goal**: Prevent one stuck backup from blocking all others forever.
 
-#### 2. Our Intelligent Lock Detection (ExecStartPre)
-- **Configurable**: `restic_lock_max_age_hours: 12` (default)
-- **Logic**: Check if locks exist AND if they exceed our threshold
-- **Only then**: Call `restic unlock` to clean up crash locks
-- **Fresh locks**: Pass through to `--retry-lock` mechanism
-
-### How It Works: Three-Layer Strategy
+**Strategy**: Detect stale locks (>30min), remove them, fail fast on active locks, retry automatically.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ Layer 1: ExecStartPre - Stale Lock Detection               │
+│ Step 1: ExecStartPre - Lock Check & Cleanup                │
 │ ─────────────────────────────────────────────────────────── │
-│ • Check: Does lock exist?                                   │
-│ • Check: Is lock older than restic_lock_max_age_hours?     │
-│ • If YES: Call 'restic unlock' (crash recovery)            │
-│ • If NO: Pass through (let --retry-lock handle it)         │
+│ • Check: Does a lock exist?                                 │
+│   ├─ NO  → Continue to backup                              │
+│   └─ YES → Try to remove it:                               │
+│            ├─ restic unlock (removes locks >30min old)     │
+│            ├─ SUCCESS → Lock was stale, removed ✓          │
+│            └─ FAIL    → Lock is fresh (<30min)             │
+│                         └─ exit 1 (triggers retry)         │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ Layer 2: --retry-lock - Short-term Wait                    │
+│ Step 2: ExecStart - Run Backup                             │
 │ ─────────────────────────────────────────────────────────── │
-│ • Backup: --retry-lock 5m (high priority)                  │
-│ • Prune/Check/Scan: --retry-lock 30s (low priority)        │
-│ • Waits for lock release during this period                │
-│ • If timeout: EXIT 1 (triggers Layer 3)                    │
+│ • restic backup /path                                       │
+│ • Creates new lock automatically                           │
+│ • Removes lock on completion                               │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ Layer 3: Systemd Restart - Long-term Retry                 │
+│ Step 3: Systemd Restart - Automatic Retry                  │
 │ ─────────────────────────────────────────────────────────── │
-│ • Restart=on-failure                                        │
-│ • RestartSec=15min (configurable)                          │
-│ • Retries until success or max attempts reached            │
-│ • Default: Unlimited retries (restic_restart_max_attempts=0)│
+│ • On failure: Wait RestartSec (default: 15min)            │
+│ • Retry: Back to Step 1                                    │
+│ • Continues until: Success or manual stop                  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Configuration Variables
+### Configuration
 
 ```yaml
-# Stale lock detection threshold (crash recovery)
-restic_lock_max_age_hours: 12         # Default: 12 hours
-# Per-source override:
-# lock_max_age_hours: 6
-
-# Retry-lock duration (short-term wait)
-restic_retry_lock_duration: "5m"      # Backup default
-# Per-source override:
-# retry_lock_duration: "10m"
-
-# Systemd restart interval (long-term retry)
+# Systemd restart configuration
 restic_restart_sec: "15min"           # Wait between retries
-restic_restart_max_attempts: 0        # 0 = unlimited
+restic_restart_max_attempts: 0        # 0 = unlimited retries
 ```
 
-### Scenario Examples
+**Note**: The 30-minute stale lock threshold is **hardcoded in Restic** and cannot be changed.
 
-#### Scenario A: Normal Concurrent Operation (Lock < 12 hours)
+### Example Scenario: Concurrent Jobs
 
-**Timeline:**
 ```
-14:00:00  Backup starts for source "var-www"
-          → Repository LOCKED by backup process
+14:00  Job A (var-www) starts
+       └─ Lock created
+       
+14:30  Job B (etc) starts
+       ├─ Lock check: Found (30min old)
+       ├─ restic unlock: Lock >30min → REMOVED ✓
+       └─ Job B runs
+       
+       Job A: FAILS (lock was removed)
+       └─ Systemd retries Job A after 15min
 
-14:30:00  Prune timer fires (weekly schedule)
+14:45  Job A retries
+       ├─ Job B still running
+       ├─ Lock check: Found (15min old)
+       ├─ restic unlock: Lock <30min → NOT REMOVED
+       ├─ exit 1
+       └─ Retry after 15min
 
-          [ExecStartPre - Layer 1]
-          ├─ restic list locks --no-lock
-          ├─ Lock found: 30 minutes old
-          ├─ Threshold: 12 hours (43200 seconds)
-          ├─ 30min < 12h → NO unlock
-          └─ Log: "Lock exists (age: 1800s), will use --retry-lock"
-
-          [ExecStart - Layer 2]
-          ├─ restic forget --prune --retry-lock 30s
-          ├─ Waits 30 seconds for lock release
-          ├─ Lock still held (backup running)
-          └─ EXIT 1
-
-          [Systemd - Layer 3]
-          ├─ Restart=on-failure triggered
-          ├─ Wait RestartSec=15min
-          └─ Schedule retry for 14:45:00
-
-14:45:00  Prune Retry #1
-          → Same process, backup still running → EXIT 1
-          → Next retry: 15:00:00
-
-15:00:00  Prune Retry #2
-          → Same process, backup still running → EXIT 1
-          → Next retry: 15:15:00
-
-... (continues every 15 minutes) ...
-
-16:00:00  Backup completes
-          → Repository UNLOCKED
-
-16:15:00  Prune Retry #N
-
-          [ExecStartPre - Layer 1]
-          ├─ restic list locks --no-lock
-          ├─ No locks found
-          └─ Pass through
-
-          [ExecStart - Layer 2]
-          ├─ restic forget --prune --retry-lock 30s
-          ├─ No lock detected
-          ├─ Prune runs successfully
-          └─ EXIT 0 ✓
-
-          [Systemd - Layer 3]
-          └─ Success - no more retries
+15:00  Job A retries
+       ├─ Job B finished
+       ├─ Lock check: None found
+       └─ Job A runs ✓
 ```
 
-**Result**: Prune succeeded after backup completed, ~16 retries over 4 hours.
+### Best Practices
 
----
+1. **Avoid long-running backups**: Schedule large backups at off-peak times
+2. **Stagger timer starts**: Use `RandomizedDelaySec` to spread jobs
+3. **Monitor locks**: Use `/opt/restic/restic-repo-info.sh locks`
+4. **Kill stuck jobs**: `systemctl stop restic-backup@<source>.service`
 
-#### Scenario B: Stale Lock from Crash (Lock > 12 hours)
-
-**Timeline:**
-```
-02:00:00  Backup started yesterday
-02:30:00  Server crashed during backup
-          → Lock file remains (age: 0 hours)
-
-... 15 hours pass ...
-
-17:30:00  Server rebooted
-18:00:00  Next backup timer fires
-
-          [ExecStartPre - Layer 1]
-          ├─ restic list locks --no-lock
-          ├─ Lock found: 15 hours 30 minutes old (55800 seconds)
-          ├─ Threshold: 12 hours (43200 seconds)
-          ├─ 15.5h > 12h → YES, call unlock!
-          ├─ Log: "Removing stale lock (age: 55800s > 43200s)"
-          ├─ Execute: restic unlock
-          │  └─ Restic removes lock (>30 min = stale for Restic)
-          └─ Lock removed ✓
-
-          [ExecStart - Layer 2]
-          ├─ restic backup /var/www --retry-lock 5m
-          ├─ No lock detected
-          ├─ Backup runs successfully
-          └─ EXIT 0 ✓
-```
-
-**Result**: Stale lock automatically cleaned up, backup succeeded immediately.
-
----
-
-#### Scenario C: Backup Priority Over Maintenance
-
-**Timeline:**
-```
-14:00:00  Prune starts (runs ~30 minutes)
-          → Repository LOCKED by prune
-
-14:05:00  Backup timer fires (daily schedule)
-
-          [ExecStartPre - Layer 1]
-          ├─ Lock found: 5 minutes old
-          ├─ 5min < 12h → NO unlock
-          └─ Pass through
-
-          [ExecStart - Layer 2]
-          ├─ restic backup /var/www --retry-lock 5m
-          ├─ Waits up to 5 MINUTES for lock
-          ├─ After 25 minutes: Prune completes
-          ├─ Lock released
-          ├─ Backup acquires lock and runs
-          └─ EXIT 0 ✓
-
-          [Systemd - Layer 3]
-          └─ Success - no restart needed
-```
-
-**Result**: Backup waited 25 minutes (within 5m retry window), succeeded without restart.
-
----
-
-#### Scenario D: Multiple Concurrent Sources (No Conflict)
-
-**Timeline:**
-```
-02:00:00  Backup timer fires for 3 sources
-
-          [Source: var-www]
-          ├─ Instance: restic-backup@var-www.service
-          ├─ Lock: var-www-specific (per-source isolation)
-          └─ Runs independently ✓
-
-          [Source: home]
-          ├─ Instance: restic-backup@home.service
-          ├─ Lock: home-specific (per-source isolation)
-          └─ Runs independently ✓
-
-          [Source: etc]
-          ├─ Instance: restic-backup@etc.service
-          ├─ Lock: etc-specific (per-source isolation)
-          └─ Runs independently ✓
-```
-
-**Note**: Restic locks are per-repository. If all sources use the **same repository**, they WILL conflict and retry. Use separate repositories for true parallelism.
-
----
-
-### Lock Priorities by Operation
-
-| Operation | --retry-lock | Restart | Priority | Reason |
-|-----------|-------------|---------|----------|--------|
-| **Backup** | 5m | Yes | 🔴 High | Data loss prevention critical |
-| **Prune** | 30s | Yes | 🟡 Medium | Space management important |
-| **Check** | 30s | Yes | 🟡 Medium | Integrity verification important |
-| **Scan** | 30s | No | 🟢 Low | Statistics only, not critical |
 
 ### Troubleshooting Lock Issues
 
@@ -401,9 +257,8 @@ systemctl stop restic-backup@var-www.service
 killall -9 restic
 restic -r s3:bucket/path unlock
 
-# Adjust thresholds
+# Adjust retry timing
 # In group_vars or playbook:
-restic_lock_max_age_hours: 6     # More aggressive cleanup
 restic_restart_sec: "5min"       # Faster retries
 ```
 
@@ -825,15 +680,11 @@ restic_backup_sources:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `restic_lock_max_age_hours` | `12` | Stale lock threshold for cleanup |
-| `restic_retry_lock_duration` | `5m` | Wait time for locks (backup) |
 | `restic_restart_sec` | `15min` | Wait between systemd retries |
 | `restic_restart_max_attempts` | `0` | Max retries (0=unlimited) |
 | `restic_backup_timeout_seconds` | `0` | Backup timeout (0=unlimited) |
 | `restic_check_read_data` | `false` | Full data verification |
 | `restic_check_read_data_subset` | `""` | Partial check ("1/12", "10%") |
-
-**Note**: Prune/Check/Scan use `--retry-lock 30s` (hardcoded, lower priority than backup).
 
 ### Performance
 
